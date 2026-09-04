@@ -93,6 +93,11 @@ export const APP_COMMAND_GROUPS: readonly AppCommandGroup[] = [
         "Show or hide the app sidebar.",
       ),
       command(
+        "sidebar.railToggle",
+        "Toggle icon rail",
+        "Collapse the sidebar to an icon rail, or expand it back to full width.",
+      ),
+      command(
         "panel.newTab",
         "New panel tab",
         "Open a tab in the secondary panel.",

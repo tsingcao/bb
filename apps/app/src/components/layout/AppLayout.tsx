@@ -205,6 +205,12 @@ function SidebarStateBridge({ children }: SidebarStateBridgeProps) {
     },
     [handleOpenChange, setRail],
   );
+  useAppCommandHandler("sidebar.railToggle", () => {
+    // 收成 icon rail / 展开侧栏：rail 开时回到完整侧栏，关时收成 icon rail
+    // （handleRailChange 会在启用 rail 的同时把侧栏展开，与按钮行为一致）。
+    handleRailChange(!rail);
+    return true;
+  });
   return (
     <SidebarProvider
       width={`${sidebarLiveWidth ?? sidebarWidth}px`}

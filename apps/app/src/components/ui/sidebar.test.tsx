@@ -839,3 +839,172 @@ describe("mobile sidebar text-selection arbitration", () => {
     expect(getMobilePanel()?.dataset.state).toBe("closed");
   });
 });
+
+describe("sidebar icon rail", () => {
+  function RailControls() {
+    const { rail, toggleRail } = useSidebar();
+    return (
+      <>
+        <output data-testid="rail-state">{String(rail)}</output>
+        <button type="button" onClick={toggleRail}>
+          Toggle rail
+        </button>
+      </>
+    );
+  }
+
+  function getRailPanel(): HTMLElement {
+    const panel = document.querySelector('[data-variant="sidebar"]');
+    if (!(panel instanceof HTMLElement)) {
+      throw new Error("Expected a desktop sidebar rail panel");
+    }
+    return panel;
+  }
+
+  function renderRailHarness({
+    rail,
+    onRailChange,
+    iconRail = true,
+  }: {
+    rail?: boolean;
+    onRailChange?: (rail: boolean) => void;
+    iconRail?: boolean;
+  } = {}) {
+    render(
+      <CompactViewportOverrideProvider isCompactViewport={false}>
+        <SidebarProvider rail={rail} onRailChange={onRailChange}>
+          <RailControls />
+          <Sidebar iconRail={iconRail}>Sidebar content</Sidebar>
+        </SidebarProvider>
+      </CompactViewportOverrideProvider>,
+    );
+    return getRailPanel();
+  }
+
+  it("toggles rail in uncontrolled mode and drives data-collapsible=icon", () => {
+    const panel = renderRailHarness();
+
+    expect(screen.getByTestId("rail-state").textContent).toBe("false");
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+    expect(panel.getAttribute("data-state")).toBe("expanded");
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle rail" }));
+
+    expect(screen.getByTestId("rail-state").textContent).toBe("true");
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle rail" }));
+
+    expect(screen.getByTestId("rail-state").textContent).toBe("false");
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+  });
+
+  it("defers to a controlled rail prop: onRailChange reports intent, prop decides the mode", () => {
+    const onRailChange = vi.fn();
+    const { rerender } = render(
+      <CompactViewportOverrideProvider isCompactViewport={false}>
+        <SidebarProvider rail onRailChange={onRailChange}>
+          <RailControls />
+          <Sidebar iconRail>Sidebar content</Sidebar>
+        </SidebarProvider>
+      </CompactViewportOverrideProvider>,
+    );
+
+    const panel = getRailPanel();
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle rail" }));
+
+    expect(onRailChange).toHaveBeenCalledWith(false);
+    // Controlled: 内部状态不被就地翻转，仍由父级 rail=true 决定 → 保持 icon。
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+
+    rerender(
+      <CompactViewportOverrideProvider isCompactViewport={false}>
+        <SidebarProvider rail={false} onRailChange={onRailChange}>
+          <RailControls />
+          <Sidebar iconRail>Sidebar content</Sidebar>
+        </SidebarProvider>
+      </CompactViewportOverrideProvider>,
+    );
+
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+  });
+
+  it("only emits icon mode when expanded, iconRail is set, and rail is on", () => {
+    render(
+      <CompactViewportOverrideProvider isCompactViewport={false}>
+        <SidebarProvider>
+          <RailControls />
+          <Sidebar>Sidebar content</Sidebar>
+        </SidebarProvider>
+      </CompactViewportOverrideProvider>,
+    );
+
+    const panel = getRailPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle rail" }));
+
+    // 未传 iconRail → 不进入 icon 模式
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+  });
+
+  it("collapses to offcanvas when closed, regardless of the rail", () => {
+    render(
+      <CompactViewportOverrideProvider isCompactViewport={false}>
+        <SidebarProvider defaultOpen={false}>
+          <RailControls />
+          <Sidebar iconRail>Sidebar content</Sidebar>
+        </SidebarProvider>
+      </CompactViewportOverrideProvider>,
+    );
+
+    const panel = getRailPanel();
+    expect(panel.getAttribute("data-state")).toBe("collapsed");
+    expect(panel.getAttribute("data-collapsible")).toBe("offcanvas");
+  });
+
+  it("hover-peek expands the rail and collapses again 350ms after leave", () => {
+    vi.useFakeTimers();
+    const panel = renderRailHarness({ rail: true });
+
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+
+    fireEvent.mouseEnter(panel);
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+
+    fireEvent.mouseLeave(panel);
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+
+    act(() => {
+      vi.advanceTimersByTime(349);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+  });
+
+  it("a re-enter during the leave debounce cancels the scheduled collapse", () => {
+    vi.useFakeTimers();
+    const panel = renderRailHarness({ rail: true });
+
+    fireEvent.mouseEnter(panel);
+    fireEvent.mouseLeave(panel);
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+
+    // 350ms 内重新进入 → 取消折叠定时器，保持展开
+    fireEvent.mouseEnter(panel);
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+
+    fireEvent.mouseLeave(panel);
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+  });
+});

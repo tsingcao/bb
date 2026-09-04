@@ -94,3 +94,18 @@ describe("buildAppCommandActions", () => {
     expect(dispatch).toHaveBeenCalledWith("thread.new", target);
   });
 });
+
+describe("sidebar.railToggle palette registration", () => {
+  it("is palette-visible and grouped under Window and layout", () => {
+    expect(PALETTE_COMMAND_IDS).toContain("sidebar.railToggle");
+
+    const { actions } = build(["sidebar.railToggle"]);
+    expect(actions).toMatchObject([
+      {
+        id: "app:sidebar.railToggle",
+        group: "Window and layout",
+        title: "Toggle icon rail",
+      },
+    ]);
+  });
+});
