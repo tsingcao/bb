@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>DSH / NEXTLoop 皮肤 · 截图基线（bb-fork apps/app）</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #0d1117; color: #ddd; padding: 24px; }
+  h1 { font-size: 20px; color: #7ee0ff; }
+  h2 { font-size: 14px; color: #9fb4c7; margin: 28px 0 8px; border-top: 1px solid #222; padding-top: 16px; }
+  img { max-width: 100%; border: 1px solid #333; border-radius: 8px; background: #000; }
+  p.note { color: #888; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>DSH / NEXTLoop 皮肤 — 截图基线（1440×900 Playwright 截图，除非注明）</h1>
+
+<h2>BEFORE · 桌面 dark home（原版 bb 外观）</h2>
+<img src="desktop_dark_home.png">
+<h2>BEFORE · 桌面 light home（原版 bb 外观）</h2>
+<img src="desktop_light_home.png">
+
+<h2>AFTER · 桌面 dark home（蓝黑画布 + 霓虹青 + 玻璃侧栏 + 应用坞磁贴）</h2>
+<img src="final_dark_home.png">
+<h2>AFTER · dock 磁贴 hover 光效</h2>
+<img src="final_dark_home_hover.png">
+<h2>AFTER · 桌面 dark thread（对话/线程视图，皮肤覆盖）</h2>
+<img src="final_dark_thread.png">
+<h2>AFTER · 桌面 light home（清爽同源变体）</h2>
+<img src="final_light_home.png">
+<h2>AFTER · 紧凑视口 dark（699px，移动/预览窗形态：无 rail 折叠钮）</h2>
+<img src="final_compact_dark.png">
+
+<h2>icon 抽屉 · 完整侧栏（顶部 rail 折叠钮在顶行下方）</h2>
+<img src="rail_full.png">
+<h2>icon 抽屉 · 收起为图标磁贴 rail（悬停自动浮出）</h2>
+<img src="rail_icon.png">
+<h2>icon 抽屉 · 悬停浮出（hover-peek 临时展开）</h2>
+<img src="rail_peek.png">
+
+<h2>设置 · Appearance（DSH / NEXTLoop skin 开关 · ON，dark）</h2>
+<img src="final_settings_dark_on.png">
+<h2>设置 · 一键关闭 → 即时恢复 bb 原版外观（OFF，dark）</h2>
+<img src="final_settings_dark_off.png">
+
+<h2>玻璃右侧面板 · 终端窗格（dark，chrome 72%/58% + blur 22px；xterm 画布不透明保可读性）</h2>
+<img src="glass_dark_terminal.png">
+<h2>玻璃右侧面板 · 终端窗格（light）</h2>
+<img src="glass_light_terminal.png">
+<h2>终端实时输入验证（echo glass-ok 已执行）</h2>
+<img src="xterm_live.png">
+
+<p class="note">生成方式：headless Playwright（chromium）1440×900 viewport 连到本地 bb dev server
+（http://127.0.0.1:18154），皮肤偏好默认开（localStorage bb.dshell.enabled）。
+评审基线用途：前后对照该皮肤层的视觉回归；核心交互回归另有 41 例 vitest + typecheck 覆盖。</p>
+</body>
+</html>

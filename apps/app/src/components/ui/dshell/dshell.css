@@ -1,0 +1,252 @@
+/* ============================================================================
+ * dshell —— DSH-WORKTABLE 视觉皮肤层（NextLoop Studio 外壳）
+ * ----------------------------------------------------------------------------
+ * 纯 CSS + 一组设计令牌覆盖：不触碰任何组件机制 / 状态机 / harness 接缝。
+ * 挂载方式：main.tsx 中 document.documentElement.classList.add("dshell")。
+ * 全部规则以 `html.dshell` 为前缀提升优先级，随时可整体摘除。
+ * 设计语言：蓝黑画布 + 霓虹青主色 + 蓝图网格环境光 + 侧栏/浮动面毛玻璃。
+ * ========================================================================== */
+
+/* --- 1. 环境令牌 ---------------------------------------------------------- */
+html.dshell {
+  --dsh-cyan: oklch(0.86 0.12 206);
+  --dsh-cyan-soft: oklch(0.78 0.11 208);
+  --dsh-violet: oklch(0.72 0.15 300);
+  --dsh-grid: oklch(0.55 0.09 235 / 0.07);
+  --dsh-glow: 0 0 0 1px oklch(0.86 0.12 206 / 0.28), 0 0 16px -2px oklch(0.78 0.12 210 / 0.5);
+  --dsh-glow-soft: 0 0 10px -3px oklch(0.78 0.12 210 / 0.45);
+}
+
+/* --- 2. 环境背景：蓝图网格 + 双霓虹光晕（垫在玻璃之下） ------------------- */
+html.dshell {
+  background-color: oklch(0.16 0.016 264);
+  background-image:
+    radial-gradient(1200px 700px at 85% -10%, oklch(0.34 0.09 265 / 0.55), transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, oklch(0.28 0.08 210 / 0.5), transparent 55%),
+    linear-gradient(var(--dsh-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--dsh-grid) 1px, transparent 1px);
+  background-size: auto, auto, 28px 28px, 28px 28px;
+  background-attachment: fixed;
+}
+html.dshell body {
+  background: transparent;
+}
+
+/* --- 3. 令牌覆盖（暗色为主基调，亮色保持清爽但同源） ---------------------- */
+html.dshell.dark {
+  --canvas: oklch(0.165 0.016 264);
+  --ink: oklch(0.85 0.012 250);
+  --primary: var(--dsh-cyan);
+  --primary-foreground: oklch(0.17 0.03 265);
+  --ring: var(--dsh-cyan-soft);
+  --timeline-accent: var(--dsh-cyan-soft);
+  --file-accent: var(--dsh-cyan-soft);
+  --muted-foreground: oklch(0.74 0.02 250);
+  --subtle-foreground: oklch(0.68 0.02 250);
+  --readback-foreground: oklch(0.71 0.02 250);
+  --border: color-mix(in oklab, var(--dsh-cyan-soft) 26%, var(--canvas));
+  --border-hairline: color-mix(in oklab, var(--dsh-cyan-soft) 30%, var(--canvas));
+  --border-seam: color-mix(in oklab, var(--dsh-cyan-soft) 16%, var(--canvas));
+  --input: color-mix(in oklab, var(--dsh-cyan-soft) 38%, var(--canvas));
+  --state-hover: color-mix(in oklab, var(--dsh-cyan-soft) 16%, transparent);
+  --state-active: color-mix(in oklab, var(--dsh-cyan-soft) 26%, transparent);
+  --surface-selected: color-mix(in oklab, var(--dsh-cyan) 18%, transparent);
+  --surface-selected-border: color-mix(in oklab, var(--dsh-cyan) 42%, transparent);
+  --sidebar: color-mix(in oklab, var(--canvas) 78%, transparent);
+  --sidebar-foreground: var(--ink);
+  --sidebar-accent: color-mix(in oklab, var(--dsh-cyan) 14%, transparent);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: color-mix(in oklab, var(--dsh-cyan-soft) 22%, var(--canvas));
+  --attention: oklch(0.85 0.13 75);
+  --success: oklch(0.8 0.13 160);
+  --destructive-text: oklch(0.72 0.16 22);
+}
+html.dshell:not(.dark) {
+  --dsh-cyan: oklch(0.5 0.11 232);
+  --dsh-cyan-soft: oklch(0.55 0.1 233);
+  --dsh-violet: oklch(0.55 0.14 300);
+  --dsh-grid: oklch(0.45 0.06 240 / 0.055);
+  --canvas: oklch(0.985 0.004 240);
+  --ink: oklch(0.3 0.015 260);
+  --primary: oklch(0.44 0.11 233);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: var(--dsh-cyan-soft);
+  --timeline-accent: oklch(0.5 0.1 235);
+  --file-accent: var(--timeline-accent);
+  --border-seam: color-mix(in oklab, var(--dsh-cyan-soft) 22%, var(--canvas));
+  --surface-selected: color-mix(in oklab, var(--dsh-cyan) 14%, transparent);
+  --sidebar: color-mix(in oklab, var(--canvas) 72%, transparent);
+  --sidebar-accent: color-mix(in oklab, var(--dsh-cyan) 12%, transparent);
+}
+html.dshell:not(.dark) {
+  background-color: oklch(0.985 0.004 240);
+  background-image:
+    radial-gradient(1100px 640px at 88% -12%, oklch(0.82 0.06 235 / 0.4), transparent 62%),
+    radial-gradient(820px 560px at -8% 112%, oklch(0.85 0.05 265 / 0.35), transparent 56%),
+    linear-gradient(var(--dsh-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--dsh-grid) 1px, transparent 1px);
+  background-size: auto, auto, 28px 28px, 28px 28px;
+  background-attachment: fixed;
+}
+
+/* --- 4. 侧栏玻璃 + 应用坞 ------------------------------------------------ */
+html.dshell [data-sidebar="panel"] {
+  background: var(--sidebar);
+  -webkit-backdrop-filter: blur(22px) saturate(1.45);
+  backdrop-filter: blur(22px) saturate(1.45);
+  border-right: 1px solid var(--sidebar-border);
+  box-shadow: 1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 6%, transparent),
+    inset 0 0 0 1px transparent;
+}
+html.dshell [data-sidebar="panel"] [data-sidebar="sidebar"],
+html.dshell [data-sidebar="panel"] [data-sidebar="content"],
+html.dshell [data-sidebar="panel"] [data-sidebar="footer"],
+html.dshell [data-sidebar="panel"] .bg-sidebar {
+  background: transparent;
+}
+/* 顶部应用坞：New/Search/插件入口 行做成圆角磁贴，hover 泛青光 */
+html.dshell nav[data-testid="sidebar-navigation-region"] {
+  margin: 6px 8px;
+  padding: 6px;
+  border-radius: 14px;
+  background: color-mix(in oklab, var(--dsh-cyan-soft) 5%, transparent);
+  border: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 12%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+html.dshell nav[data-testid="sidebar-navigation-region"] [role="button"],
+html.dshell nav[data-testid="sidebar-navigation-region"] button,
+html.dshell nav[data-testid="sidebar-navigation-region"] a {
+  border-radius: 10px;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+html.dshell nav[data-testid="sidebar-navigation-region"] [role="button"]:hover,
+html.dshell nav[data-testid="sidebar-navigation-region"] button:hover,
+html.dshell nav[data-testid="sidebar-navigation-region"] a:hover {
+  box-shadow: var(--dsh-glow-soft);
+}
+html.dshell nav[data-testid="sidebar-navigation-region"] [data-active="true"],
+html.dshell nav[data-testid="sidebar-navigation-region"] [aria-current="page"] {
+  box-shadow: var(--dsh-glow);
+}
+/* 侧栏行 hover/选中光效（行本身用 token，仅补辉光） */
+html.dshell [data-sidebar="panel"] [role="button"]:hover,
+html.dshell [data-sidebar="panel"] a:hover {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dsh-cyan-soft) 16%, transparent);
+}
+/* icon 折叠形态（bb 内部已支持 collapsible=icon）：磁贴居中对齐 */
+html.dshell .group[data-collapsible="icon"] nav[data-testid="sidebar-navigation-region"] {
+  padding: 4px;
+}
+
+/* --- 5. 内容区：保持可读不透明，仅加顶部发丝辉光与角落环境光 --------------- */
+html.dshell [data-sidebar="inset"] {
+  background:
+    radial-gradient(900px 420px at 105% -12%, oklch(0.45 0.09 265 / 0.16), transparent 62%),
+    var(--background);
+  border-left: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 14%, transparent);
+}
+html.dshell [data-testid="app-layout-content-shell"] > div:first-child {
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--dsh-cyan-soft) 18%, transparent);
+}
+
+/* --- 6. 交互霓虹：选中 / 焦点 / 滚动条 ------------------------------------ */
+html.dshell ::selection {
+  background: color-mix(in oklab, var(--dsh-cyan) 30%, transparent);
+}
+html.dshell.dark ::selection {
+  color: var(--ink);
+}
+html.dshell *:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--dsh-cyan-soft) 70%, transparent);
+  outline-offset: 1px;
+}
+html.dshell * {
+  scrollbar-color: color-mix(in oklab, var(--dsh-cyan-soft) 38%, transparent) transparent;
+}
+html.dshell.dark ::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--dsh-cyan-soft) 32%, transparent);
+  border-radius: 999px;
+}
+html.dshell.dark ::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--dsh-cyan-soft) 48%, transparent);
+}
+
+/* --- 7. 浮动面（弹出层/命令面板/菜单）：真毛玻璃 -------------------------- */
+html.dshell [data-slot="popover-content"],
+html.dshell [data-radix-popper-content-wrapper] > div {
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+  background-color: color-mix(in oklab, var(--canvas) 82%, transparent);
+}
+
+/* --- 8. 终端/分屏窗格：边框发丝 + 激活辉光 -------------------------------- */
+html.dshell [data-panel-group] [data-panel-resize-handle-id]:hover {
+  background: var(--dsh-cyan-soft);
+  box-shadow: var(--dsh-glow-soft);
+}
+
+/* --- 9. 动效偏好 ----------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html.dshell *,
+  html.dshell *::before,
+  html.dshell *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* --- 10. icon 磁贴抽屉（rail）细节 --------------------------------------- */
+html.dshell [data-collapsible="icon"] nav[data-testid="sidebar-navigation-region"] {
+  margin: 4px;
+  padding: 5px 4px;
+}
+html.dshell [data-collapsible="icon"] nav[data-testid="sidebar-navigation-region"] [role="button"],
+html.dshell [data-collapsible="icon"] nav[data-testid="sidebar-navigation-region"] a {
+  margin-inline: auto;
+}
+html.dshell [data-testid="sidebar-rail-toggle"] {
+  color: color-mix(in oklab, var(--dsh-cyan-soft) 75%, var(--ink));
+}
+
+/* --- 11. 右侧固定面板 + 终端玻璃 chrome -------------------------------- */
+/* 面板骨架：半透明毛玻璃，悬浮在线程/对话内容之上 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] > aside,
+html.dshell [data-panel-id="thread-detail-secondary-panel"] aside {
+  background: color-mix(in oklab, var(--canvas) 72%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+  border-left: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 24%, transparent);
+  box-shadow: -1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 6%, transparent);
+}
+/* 顶层 chrome（tab 行）：最透的玻璃层 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] aside .shrink-0.select-none.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 58%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 16%, transparent);
+}
+/* 内容区：保证长文/终端可读性 —— 较实的暗底 + 轻 blur */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] aside
+  > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 84%, transparent);
+}
+/* 剥掉内层重复的 bg-sidebar，避免层层叠透明 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] aside .bg-sidebar {
+  background: transparent;
+}
+/* 终端：把 xterm 画布放到我们自己的玻璃底上 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm,
+html.dshell [data-panel-id="thread-detail-secondary-panel"] .xterm-viewport {
+  background-color: transparent !important;
+}
+html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dsh-cyan-soft) 10%, transparent);
+}
+/* 其余 tool 面板（diff/浏览器等）同玻璃底 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] aside section {
+  background: transparent;
+}
+html.dshell:not(.dark) [data-panel-id="thread-detail-secondary-panel"] aside
+  > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 88%, transparent);
+}

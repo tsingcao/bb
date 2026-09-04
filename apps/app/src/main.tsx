@@ -14,6 +14,8 @@ import { installAppQueryClientBrowserEvents } from "./lib/query-client";
 import { appQueryClient } from "./lib/app-query-client";
 import { applyCachedAppThemeCss } from "./lib/themes";
 import "./app.css";
+import "./components/ui/dshell/dshell.css";
+import { applyDshellClass } from "./lib/dshell";
 
 installForeignDomMutationGuard();
 
@@ -24,6 +26,7 @@ registerProviderCliInstallQueryClient(appQueryClient);
 
 initializePreferredTheme();
 applyCachedAppThemeCss();
+applyDshellClass();
 initializeFavicon();
 disableGlobalCursorStyles();
 

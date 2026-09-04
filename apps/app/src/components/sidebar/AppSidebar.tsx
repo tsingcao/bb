@@ -49,6 +49,7 @@ import {
 } from "@/components/commands/AppCommandProvider";
 import { useRouteState } from "@/hooks/useRouteState";
 import { SidebarNavigationRegion } from "./SidebarNavigationRegion";
+import { SidebarRailToggle } from "./SidebarRailToggle";
 
 const NEW_THREAD_PANE_CONTENT = { kind: "new-thread" } as const;
 
@@ -227,6 +228,9 @@ export function AppSidebar({
           />
         </div>
       ) : null}
+      <div className="flex shrink-0 items-center gap-1 px-2 pb-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 group-data-[collapsible=icon]:pb-1.5">
+        <SidebarRailToggle />
+      </div>
       <SidebarNavigationRegion
         onNavigate={closeOnMobile}
         splitEnabled
@@ -323,7 +327,9 @@ export function AppSidebar({
           {body}
         </div>
       ) : (
-        <Sidebar ref={sidebarRef}>{body}</Sidebar>
+        <Sidebar ref={sidebarRef} iconRail>
+          {body}
+        </Sidebar>
       )}
     </SidebarThreadShortcutKeysContext.Provider>
   );

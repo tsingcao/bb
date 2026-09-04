@@ -113,6 +113,7 @@ import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
 
 const SIDEBAR_WIDTH_KEY = "bb.sidebar.width";
 const SIDEBAR_OPEN_KEY = "bb.sidebar.open";
+const SIDEBAR_RAIL_KEY = "bb.sidebar.rail";
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 460;
 const SIDEBAR_DEFAULT_WIDTH = 320;
@@ -156,6 +157,20 @@ const sidebarOpenAtom = atomWithStorage<boolean>(
   sidebarOpenStorage,
   { getOnInit: true },
 );
+const sidebarRailStorage = createLocalStorageSyncStorage<boolean>({
+  parse: (storedValue, initialValue) => {
+    if (storedValue === "true") return true;
+    if (storedValue === "false") return false;
+    return initialValue;
+  },
+  serialize: (value) => String(value),
+});
+const sidebarRailAtom = atomWithStorage<boolean>(
+  SIDEBAR_RAIL_KEY,
+  false,
+  sidebarRailStorage,
+  { getOnInit: true },
+);
 
 interface SidebarStateBridgeProps {
   children: ReactNode;
@@ -166,6 +181,7 @@ type SidebarOpenChangeHandler = (open: boolean) => void;
 
 function SidebarStateBridge({ children }: SidebarStateBridgeProps) {
   const [open, setOpen] = useAtom(sidebarOpenAtom);
+  const [rail, setRail] = useAtom(sidebarRailAtom);
   const sidebarWidth = useAtomValue(sidebarWidthAtom);
   const sidebarLiveWidth = useAtomValue(sidebarLiveWidthAtom);
   const handleOpenChange = useCallback<SidebarOpenChangeHandler>(
@@ -179,12 +195,24 @@ function SidebarStateBridge({ children }: SidebarStateBridgeProps) {
     handleOpenChange(!open);
     return true;
   });
+  const handleRailChange = useCallback(
+    (nextRail: boolean) => {
+      if (nextRail) {
+        handleOpenChange(true);
+      }
+      setRail(nextRail);
+      window.requestAnimationFrame(dispatchBrowserViewBoundsSync);
+    },
+    [handleOpenChange, setRail],
+  );
   return (
     <SidebarProvider
       width={`${sidebarLiveWidth ?? sidebarWidth}px`}
       data-testid="app-layout-root"
       open={open}
       onOpenChange={handleOpenChange}
+      rail={rail}
+      onRailChange={handleRailChange}
     >
       {children}
     </SidebarProvider>

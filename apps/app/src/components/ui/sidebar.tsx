@@ -403,6 +403,9 @@ type SidebarContext = {
   state: "expanded" | "collapsed";
   open: boolean;
   setOpen: (open: boolean) => void;
+  rail: boolean;
+  setRail: (rail: boolean | ((rail: boolean) => boolean)) => void;
+  toggleRail: () => void;
   openMobile: boolean;
   setOpenMobile: (open: boolean) => void;
   openMobileSidebar: () => void;
@@ -464,6 +467,8 @@ const SidebarProvider = React.forwardRef<
     defaultOpen?: boolean;
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
+    rail?: boolean;
+    onRailChange?: (rail: boolean) => void;
     width?: string;
   }
 >(
@@ -473,6 +478,8 @@ const SidebarProvider = React.forwardRef<
       open: openProp,
       onOpenChange: setOpenProp,
       width = SIDEBAR_WIDTH,
+      rail: railProp,
+      onRailChange,
       className,
       style,
       children,
@@ -594,6 +601,23 @@ const SidebarProvider = React.forwardRef<
       [setOpenProp, open],
     );
 
+    const [_rail, _setRail] = React.useState(false);
+    const rail = railProp ?? _rail;
+    const setRail = React.useCallback(
+      (value: boolean | ((value: boolean) => boolean)) => {
+        const nextRail = typeof value === "function" ? value(rail) : value;
+        if (onRailChange) {
+          onRailChange(nextRail);
+        } else {
+          _setRail(nextRail);
+        }
+      },
+      [rail, onRailChange],
+    );
+    const toggleRail = React.useCallback(() => {
+      setRail((current) => !current);
+    }, [setRail]);
+
     const toggleSidebar = React.useCallback(() => {
       if (!isCompactViewport) {
         setOpen((open) => !open);
@@ -619,6 +643,9 @@ const SidebarProvider = React.forwardRef<
         state,
         open,
         setOpen,
+        rail,
+        setRail,
+        toggleRail,
         isCompactViewport,
         openMobile,
         setOpenMobile,
@@ -636,6 +663,9 @@ const SidebarProvider = React.forwardRef<
         state,
         open,
         setOpen,
+        rail,
+        setRail,
+        toggleRail,
         isCompactViewport,
         openMobile,
         setOpenMobile,
@@ -685,11 +715,15 @@ const SidebarProvider = React.forwardRef<
 );
 SidebarProvider.displayName = "SidebarProvider";
 
-const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
-  ({ className, style, children, ...props }, ref) => {
+const Sidebar = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<"div"> & { iconRail?: boolean }
+>(
+  ({ className, style, children, iconRail = false, ...props }, ref) => {
     const {
       isCompactViewport,
       state,
+      rail,
       openMobile,
       setOpenMobile,
       closeMobileSidebar,
@@ -701,6 +735,28 @@ const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
     } = useSidebar();
     const width = React.useContext(SidebarWidthContext);
     const widthStyle = { "--sidebar-width": width } as React.CSSProperties;
+    const railActive = !isCompactViewport && iconRail && state === "expanded" && rail;
+    const [railPeek, setRailPeek] = React.useState(false);
+    const railPeekTimerRef = React.useRef<number | null>(null);
+    const clearRailPeekTimer = React.useCallback(() => {
+      if (railPeekTimerRef.current !== null) {
+        window.clearTimeout(railPeekTimerRef.current);
+        railPeekTimerRef.current = null;
+      }
+    }, []);
+    const beginRailPeek = React.useCallback(() => {
+      clearRailPeekTimer();
+      setRailPeek(true);
+    }, [clearRailPeekTimer]);
+    const endRailPeek = React.useCallback(() => {
+      if (railPeekTimerRef.current !== null) return;
+      railPeekTimerRef.current = window.setTimeout(() => {
+        railPeekTimerRef.current = null;
+        setRailPeek(false);
+      }, 350);
+    }, []);
+    React.useEffect(() => clearRailPeekTimer, [clearRailPeekTimer]);
+
     const handleOpenMobileChange = React.useCallback(
       (nextOpen: boolean) => {
         if (nextOpen) {
@@ -756,9 +812,17 @@ const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
         ref={ref}
         className="group peer text-sidebar-foreground"
         data-state={state}
-        data-collapsible={state === "collapsed" ? "offcanvas" : ""}
+        data-collapsible={
+          state === "collapsed"
+            ? "offcanvas"
+            : railActive && !railPeek
+              ? "icon"
+              : ""
+        }
         data-variant="sidebar"
         data-side="left"
+        onMouseEnter={railActive ? beginRailPeek : undefined}
+        onMouseLeave={railActive ? endRailPeek : undefined}
       >
         {}
         <div
