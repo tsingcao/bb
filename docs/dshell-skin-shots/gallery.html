@@ -30,6 +30,15 @@
 <h2>AFTER · 紧凑视口 dark（699px，移动/预览窗形态：无 rail 折叠钮）</h2>
 <img src="final_compact_dark.png">
 
+<h2>设置 · Appearance（dark）— 三态档位 · Original（默认 opt-in，首见 bb 原版）</h2>
+<img src="dshell_settings_original_dark.png">
+<h2>设置 · 三态档位 · Follow appearance + 亮色外观（未生效，跟随外观提示）</h2>
+<img src="dshell_settings_auto_light.png">
+<h2>设置 · 三态档位 · Follow appearance + 暗色外观（自动启用 DSH）</h2>
+<img src="dshell_settings_auto_dark.png">
+<h2>设置 · 三态档位 · DSH skin（始终启用，两种外观都生效）</h2>
+<img src="dshell_settings_always_dark.png">
+
 <h2>icon 抽屉 · 完整侧栏（顶部 rail 折叠钮在顶行下方）</h2>
 <img src="rail_full.png">
 <h2>icon 抽屉 · 收起为图标磁贴 rail（悬停自动浮出）</h2>
@@ -37,10 +46,10 @@
 <h2>icon 抽屉 · 悬停浮出（hover-peek 临时展开）</h2>
 <img src="rail_peek.png">
 
-<h2>设置 · Appearance（DSH / NEXTLoop skin 开关 · ON，dark）</h2>
-<img src="final_settings_dark_on.png">
-<h2>设置 · 一键关闭 → 即时恢复 bb 原版外观（OFF，dark）</h2>
-<img src="final_settings_dark_off.png">
+
+
+
+
 
 <h2>玻璃右侧面板 · 终端窗格（dark，chrome 72%/58% + blur 22px；xterm 画布不透明保可读性）</h2>
 <img src="glass_dark_terminal.png">
@@ -50,7 +59,7 @@
 <img src="xterm_live.png">
 
 <p class="note">生成方式：headless Playwright（chromium）1440×900 viewport 连到本地 bb dev server
-（http://127.0.0.1:18154），皮肤偏好默认开（localStorage bb.dshell.enabled）。
+（http://127.0.0.1:18154），皮肤三态（localStorage bb.dshell.enabled = off/auto/on）：默认 off；auto 档暗色自动启用、亮色用原版。
 评审基线用途：前后对照该皮肤层的视觉回归；核心交互回归另有 41 例 vitest + typecheck 覆盖。</p>
 </body>
 </html>

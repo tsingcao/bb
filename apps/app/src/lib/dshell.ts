@@ -1,59 +1,153 @@
 /**
- * DSH / NEXTLoop 皮肤偏好（客户端本地持久化）。
+ * DSH / NEXTLoop 皮肤偏好（客户端本地持久化，三态：off / auto / on）。
  *
- * 纯前端开关：只切换 <html> 上的 `.dshell` 类（样式见
+ * 纯前端实现：只切换 <html> 上的 `.dshell` 类（样式见
  * components/ui/dshell/dshell.css），不触碰主题令牌来源以外的任何机制；
  * 关闭即恢复 bb 原版外观。跨标签页通过 `storage` 事件同步。
+ *
+ * - off   原版外观（opt-in 默认）：任何外观下都不启用 DSH。
+ * - auto  「跟随外观」：暗色外观自动启用 DSH，亮色保持 bb 原版。
+ * - on    始终启用 DSH（两种外观都启用）。
+ *
+ * auto 模式监听 <html> 上 `.dark` 类的变化（MutationObserver），主题切换时
+ * 即时生效；历史布尔值（"1"/"true"/"0"/"false"）读取时自动迁移。
  */
-export const DSHELL_ENABLED_STORAGE_KEY = "bb.dshell.enabled";
-export const DSHELL_DEFAULT_ENABLED = true;
+export const DSHELL_STORAGE_KEY = "bb.dshell.enabled";
+export const DSHELL_DEFAULT_MODE = "off";
+
+export type DshellMode = "off" | "auto" | "on";
 
 export const DSHELL_PREFERENCE_LABEL = "DSH / NEXTLoop skin";
 
-function readStoredValue(): boolean {
-  if (typeof localStorage === "undefined") return DSHELL_DEFAULT_ENABLED;
-  const raw = localStorage.getItem(DSHELL_ENABLED_STORAGE_KEY);
-  if (raw === null) return DSHELL_DEFAULT_ENABLED;
-  return raw === "1" || raw === "true";
+const MODE_VALUES: readonly DshellMode[] = ["off", "auto", "on"];
+
+function isDshellMode(value: string | null | undefined): value is DshellMode {
+  return value !== null && value !== undefined && MODE_VALUES.includes(value as DshellMode);
 }
 
-let dshellEnabled = readStoredValue();
-const dshellListeners = new Set<() => void>();
+function readStoredMode(): DshellMode {
+  if (typeof localStorage === "undefined") return DSHELL_DEFAULT_MODE;
+  const raw = localStorage.getItem(DSHELL_STORAGE_KEY);
+  if (raw === null || raw === "") return DSHELL_DEFAULT_MODE;
+  // 迁移旧布尔值："1"/"true" -> on，"0"/"false" -> off
+  if (raw === "1" || raw === "true") return "on";
+  if (raw === "0" || raw === "false") return "off";
+  return isDshellMode(raw) ? raw : DSHELL_DEFAULT_MODE;
+}
 
-export function isDshellEnabled(): boolean {
-  return dshellEnabled;
+function persistMode(mode: DshellMode): void {
+  try {
+    localStorage.setItem(DSHELL_STORAGE_KEY, mode);
+  } catch {
+    // 隐私模式等场景下忽略写入失败，仅保留本次会话状态。
+  }
+}
+
+let dshellMode: DshellMode = readStoredMode();
+const modeListeners = new Set<() => void>();
+const activeListeners = new Set<() => void>();
+let lastAppliedActive: boolean | null = null;
+
+export function getDshellMode(): DshellMode {
+  return dshellMode;
+}
+
+/** 当前是否处于暗色外观（决定 auto 档的有效状态）。 */
+export function isDarkAppearance(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.documentElement.classList.contains("dark");
+}
+
+/** auto 档下结合当前外观得到的“当前是否生效”。 */
+export function computeDshellActive(): boolean {
+  return dshellMode === "on" || (dshellMode === "auto" && isDarkAppearance());
 }
 
 export function applyDshellClass(): void {
   if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("dshell", dshellEnabled);
+  const active = computeDshellActive();
+  document.documentElement.classList.toggle("dshell", active);
+  lastAppliedActive = active;
 }
 
-export function setDshellEnabled(enabled: boolean): void {
-  if (dshellEnabled === enabled) return;
-  dshellEnabled = enabled;
-  try {
-    localStorage.setItem(DSHELL_ENABLED_STORAGE_KEY, enabled ? "1" : "0");
-  } catch {
-    // 隐私模式等场景下忽略写入失败，仅保留本次会话状态。
-  }
+/** 外观变化（auto 档）后重算：返回是否发生翻转。 */
+function refreshActiveFromTheme(): boolean {
+  const active = computeDshellActive();
+  if (active === lastAppliedActive) return false;
   applyDshellClass();
-  for (const listener of dshellListeners) listener();
+  return true;
 }
 
-export function subscribeDshellEnabled(listener: () => void): () => void {
-  dshellListeners.add(listener);
-  return () => dshellListeners.delete(listener);
+function notifyActive(): void {
+  for (const listener of activeListeners) listener();
 }
 
-// 其他标签页改偏好时同步到当前页。
+export function setDshellMode(mode: DshellMode): void {
+  if (!MODE_VALUES.includes(mode)) return;
+  if (dshellMode === mode) return;
+  dshellMode = mode;
+  persistMode(mode);
+  const prevActive = lastAppliedActive;
+  applyDshellClass();
+  for (const listener of modeListeners) listener();
+  if (prevActive !== lastAppliedActive) notifyActive();
+}
+
+export function isDshellActive(): boolean {
+  return computeDshellActive();
+}
+
+export function subscribeDshellMode(listener: () => void): () => void {
+  modeListeners.add(listener);
+  return () => modeListeners.delete(listener);
+}
+
+/** 生效状态订阅：档位或（auto 下）外观变化都会触发。 */
+export function subscribeDshellActive(listener: () => void): () => void {
+  activeListeners.add(listener);
+  const unsubscribeMode = subscribeDshellMode(() => {
+    // 档位已由 setDshellMode 统一通知 active。
+  });
+  return () => {
+    activeListeners.delete(listener);
+    unsubscribeMode();
+  };
+}
+
+// 启动时按持久化档位应用一次（main.tsx 在主题初始化后也会调用）。
+if (typeof document !== "undefined") {
+  applyDshellClass();
+}
+
+// auto 档：<html> 上 .dark 变化（主题切换）时即时重算。
+if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") {
+  const startThemeWatch = () => {
+    const observer = new MutationObserver(() => {
+      if (dshellMode !== "auto") return;
+      if (refreshActiveFromTheme()) notifyActive();
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+  };
+  if (document.documentElement) {
+    startThemeWatch();
+  } else {
+    document.addEventListener("DOMContentLoaded", startThemeWatch, { once: true });
+  }
+}
+
+// 其他标签页改档位时同步到当前页。
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
-    if (event.key !== DSHELL_ENABLED_STORAGE_KEY) return;
-    const next = event.newValue === "1" || event.newValue === "true";
-    if (next === dshellEnabled) return;
-    dshellEnabled = next;
+    if (event.key !== DSHELL_STORAGE_KEY) return;
+    const raw = event.newValue;
+    if (raw === null) return;
+    const next = isDshellMode(raw) ? raw : raw === "1" || raw === "true" ? "on" : "off";
+    if (next === dshellMode) return;
+    dshellMode = next;
     applyDshellClass();
-    for (const listener of dshellListeners) listener();
+    for (const listener of modeListeners) listener();
   });
 }
