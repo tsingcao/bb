@@ -1,0 +1,45 @@
+{
+  "name": "bb-plugin-harness-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Harness 会话桥 — 在 BB 线程旁开面板，直接驱动 NextLoop Harness 会话（sessions API）",
+  "engines": {
+    "bb": ">=0.0"
+  },
+  "bb": {
+    "name": "Harness Chat",
+    "description": "BB 线程 ↔ Harness 会话桥：发 prompt、看流式结果、会话历史",
+    "branding": {
+      "icon": "MessagesSquare"
+    },
+    "server": "./src/server.ts",
+    "app": "./src/app.tsx"
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@bb/shared-ui": "workspace:*",
+    "@get-bb/plugin-sdk": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^29.0.1",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}
