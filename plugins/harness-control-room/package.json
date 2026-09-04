@@ -1,0 +1,51 @@
+{
+  "name": "bb-plugin-harness-control-room",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "NextLoop Control Room 嵌入插件 — 在 BB 侧边栏以应用抽屉形态内嵌 8765 控制室，并提供会话状态徽章",
+  "engines": {
+    "bb": ">=0.0"
+  },
+  "bb": {
+    "name": "Harness Control Room",
+    "description": "内嵌 NextLoop Control Room（8765），侧边栏抽屉 + needs-you 徽章",
+    "branding": {
+      "icon": "LayoutDashboard"
+    },
+    "server": "./src/server.ts",
+    "app": "./src/app.tsx",
+    "skills": [
+      "skills"
+    ]
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "build": "node --conditions=source --import tsx ../../scripts/build-official-plugins.mjs harness-control-room",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@bb/shared-ui": "workspace:*",
+    "@get-bb/plugin-sdk": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.1",
+    "@testing-library/react": "^16.3.2",
+    "jsdom": "^29.0.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "files": [
+    "skills"
+  ]
+}
