@@ -226,6 +226,72 @@ def main() -> int:
             browser.close()
             return 1
 
+        # --- 终端输出突发看门狗接线检查（无滚动的高频重绘降级） ---
+        # 注入 data-app-terminal 标记（等价于面板内挂载 ThreadTerminalPanel），
+        # 再用 rAF 内重活把帧时长压到 ≥33ms（模拟 xterm canvas 逐帧重绘），
+        # 断言：突发中 html 出现 dshell-scrubbing、根 blur 降为 6px；停止后
+        # 帧回 60fps、~1s 内恢复 22px。纯功能性闸，不依赖真实终端打开（其
+        # 自动化在本环境不可靠），与面板内终端渲染的触发机制等价。
+        burst_injected = page.evaluate(
+            """() => {
+              const p = document.querySelector(PANEL);
+              const aside = p ? (p.querySelector('aside') || p) : null;
+              if (!aside) return false;
+              if (aside.querySelector('[data-app-terminal]')) return true;
+              const div = document.createElement('div');
+              div.setAttribute('data-app-terminal', '');
+              div.style.cssText = 'width:10px;height:10px';
+              aside.appendChild(div);
+              return true;
+            }""".replace("PANEL", json.dumps(PANEL_SELECTOR))
+        )
+        burst_state = page.evaluate(
+            """async () => {
+              const html = document.documentElement;
+              const root = document.querySelector(PANEL);
+              html.classList.add('dshell');
+              html.classList.remove('dshell-scrubbing');
+              const idleBefore = {
+                scrubbing: html.classList.contains('dshell-scrubbing'),
+                blur: root ? getComputedStyle(root).backdropFilter : '',
+              };
+              window.__burstRaf = 0;
+              function heavy() {
+                let x = 0;
+                const end = performance.now() + 38;
+                while (performance.now() < end) { x += Math.sqrt(x + 1); }
+                return x;
+              }
+              function loop() { heavy(); window.__burstRaf = requestAnimationFrame(loop); }
+              window.__burstRaf = requestAnimationFrame(loop);
+              await new Promise(r => setTimeout(r, 1200));
+              const during = {
+                scrubbing: html.classList.contains('dshell-scrubbing'),
+                blur: root ? getComputedStyle(root).backdropFilter : '',
+              };
+              cancelAnimationFrame(window.__burstRaf);
+              window.__burstRaf = 0;
+              await new Promise(r => setTimeout(r, 1500));
+              const after = {
+                scrubbing: html.classList.contains('dshell-scrubbing'),
+                blur: root ? getComputedStyle(root).backdropFilter : '',
+              };
+              return { idleBefore, during, after };
+            }""".replace("PANEL", json.dumps(PANEL_SELECTOR))
+        )
+        burst_pass = (
+            burst_injected
+            and not burst_state["idleBefore"]["scrubbing"]
+            and burst_state["during"]["scrubbing"]
+            and "6px" in burst_state["during"]["blur"]
+            and not burst_state["after"]["scrubbing"]
+            and "22px" in burst_state["after"]["blur"]
+        )
+        log(f"  [{'PASS' if burst_pass else 'FAIL'}] burst接线  突发中→{burst_state.get('during')}  停止1.5s→{burst_state.get('after')}")
+        if not burst_pass:
+            browser.close()
+            return 1
+
         # --- 三态帧率基准：交替采样，抗机器负载漂移 ---
         results: dict[str, list[dict]] = {"full": [], "scrub": [], "off": []}
         order = []
@@ -304,6 +370,7 @@ def main() -> int:
         summary[mode] = {
             "fps": statistics.mean(r["fps"] for r in rs),
             "avgMs": statistics.mean(r["avgMs"] for r in rs),
+            "avgMsMedian": statistics.median(r["avgMs"] for r in rs),
             "p95Ms": statistics.mean(r["p95Ms"] for r in rs),
             "worstMs": max(r["worstMs"] for r in rs),
             "worstAvgMs": statistics.mean(r["worstMs"] for r in rs),
@@ -329,15 +396,16 @@ def main() -> int:
             failures.append(f"{mode} 出现 {summary[mode]['misstateTotal']} 帧 blur 不符合预期 {want}")
         if not any(want in b for b in summary[mode]["blurs"]):
             failures.append(f"{mode} 从未观测到 {want} blur（{summary[mode]['blurs']}）")
-    # 3) 三态相对关系（护栏价值）：epsilon 吸收 vsync 贴底/机器噪声。
-    #    真正回归（护栏失效→scrub 回到 full 成本、玻璃叠到原版路径）的差幅
-    #    远大于 2ms，不会漏网；CSS 接线层面另由 guard接线闸兜底。
+    # 3) 三态相对关系（护栏价值）：用各态逐轮 avgMs 的**中位数**比较（单轮
+    #    负载尖峰如 GC/并发 agent 不会翻转中位数），epsilon 吸收 vsync 贴底。
+    #    真正回归（护栏失效→scrub 回到 full 成本、玻璃叠到原版路径）会全轮
+    #    位移，中位数差幅远大于 2ms，不会漏网；CSS 接线层面另由 guard接线闸兜底。
     EPS = 2.0
     if not args.relax:
-        if summary["off"]["avgMs"] > summary["scrub"]["avgMs"] + EPS:
-            failures.append(f"off.avgMs={summary['off']['avgMs']:.1f} > scrub.avgMs+{EPS:.0f}ms（原版不应更卡）")
-        if summary["scrub"]["avgMs"] > summary["full"]["avgMs"] + EPS:
-            failures.append(f"scrub.avgMs={summary['scrub']['avgMs']:.1f} > full.avgMs+{EPS:.0f}ms（护栏 6px 应快于 22px）")
+        if summary["off"]["avgMsMedian"] > summary["scrub"]["avgMsMedian"] + EPS:
+            failures.append(f"off.avgMsMedian={summary['off']['avgMsMedian']:.1f} > scrub.avgMsMedian+{EPS:.0f}ms（原版不应更卡）")
+        if summary["scrub"]["avgMsMedian"] > summary["full"]["avgMsMedian"] + EPS:
+            failures.append(f"scrub.avgMsMedian={summary['scrub']['avgMsMedian']:.1f} > full.avgMsMedian+{EPS:.0f}ms（护栏 6px 应快于 22px）")
 
     log("")
     if failures:
