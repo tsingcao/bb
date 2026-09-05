@@ -16,6 +16,7 @@ import { applyCachedAppThemeCss } from "./lib/themes";
 import "./app.css";
 import "./components/ui/dshell/dshell.css";
 import { applyDshellClass } from "./lib/dshell";
+import { installDshellPanelPerformanceGuard } from "./lib/dshell-panel-perf";
 
 installForeignDomMutationGuard();
 
@@ -27,6 +28,7 @@ registerProviderCliInstallQueryClient(appQueryClient);
 initializePreferredTheme();
 applyCachedAppThemeCss();
 applyDshellClass();
+installDshellPanelPerformanceGuard();
 initializeFavicon();
 disableGlobalCursorStyles();
 

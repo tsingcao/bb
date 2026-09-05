@@ -224,14 +224,39 @@ html.dshell [data-testid="sidebar-rail-toggle"] {
 }
 
 /* --- 11. 右侧固定面板 + 终端玻璃 chrome -------------------------------- */
-/* 面板骨架：半透明毛玻璃，悬浮在线程/对话内容之上 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] > aside,
-html.dshell [data-panel-id="thread-detail-secondary-panel"] aside {
+/* 面板根＝⌘J/对话折叠动画实际动画的 flex 层：毛玻璃挂在这里，
+   折叠/展开全程、以及 aside 滑动面比根窄（吸附/过渡中间帧）时都保持玻璃质感。
+   描边/辉光等皮肤层过渡与面板自带节奏同步（--panel-collapse-duration，见
+   panelTransitionTokens.ts；拖拽分栏时该变量被临时置 0ms，此处同步禁用）。 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] {
   background: color-mix(in oklab, var(--canvas) 72%, transparent);
   -webkit-backdrop-filter: blur(22px) saturate(1.4);
   backdrop-filter: blur(22px) saturate(1.4);
   border-left: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 24%, transparent);
   box-shadow: -1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 6%, transparent);
+  /* 与面板自带过渡合并：保留 flex-grow/flex-basis（其 Tailwind 类同用本变量），
+     皮肤层描边/辉光跟随同一节奏；拖拽分栏时变量被置 0ms 也同步生效。 */
+  transition-property:
+    flex-grow, flex-basis, border-color, box-shadow;
+  transition-duration:
+    var(--panel-collapse-duration, 220ms),
+    var(--panel-collapse-duration, 220ms),
+    var(--panel-collapse-duration, 220ms),
+    var(--panel-collapse-duration, 220ms);
+  transition-timing-function:
+    cubic-bezier(0.32, 0.72, 0, 1),
+    cubic-bezier(0.32, 0.72, 0, 1),
+    cubic-bezier(0.32, 0.72, 0, 1),
+    cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* aside 是根内绝对定位的滑动面：自身不再叠玻璃（避免嵌套 blur 与
+   aside<根宽的折叠缝隙漏出无玻璃夹层），毛玻璃统一由根提供。 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] aside {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-left: 0;
+  box-shadow: none;
 }
 /* 顶层 chrome（tab 行）：最透的玻璃层 */
 html.dshell [data-panel-id="thread-detail-secondary-panel"] aside .shrink-0.select-none.bg-sidebar {
@@ -306,4 +331,23 @@ html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm {
 }
 html.dshell [data-panel-id="thread-detail-secondary-panel"] .xterm-viewport {
   background-color: var(--dsh-term-bg);
+}
+
+/* --- 13. backdrop-filter 性能护栏 --------------------------------------- */
+/* dshell-panel-perf.ts 在面板滚动/终端高频重绘/分栏拖拽时挂 html.dshell-scrubbing：
+   模糊半径 22px→6px（滚动静止 ~150ms 后恢复），底色提高不透明度以补偿降级后的
+   边缘锐度；终端画布本身不透明，不受影响。 */
+html.dshell.dshell-scrubbing [data-panel-id="thread-detail-secondary-panel"] {
+  -webkit-backdrop-filter: blur(6px) saturate(1.2);
+  backdrop-filter: blur(6px) saturate(1.2);
+  background: color-mix(in oklab, var(--canvas) 80%, transparent);
+  box-shadow: -1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 6%, transparent);
+}
+html.dshell.dshell-scrubbing [data-panel-id="thread-detail-secondary-panel"] aside
+  > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 86%, transparent);
+}
+html.dshell.dshell-scrubbing [data-panel-id="thread-detail-secondary-panel"] aside
+  .shrink-0.select-none.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 66%, transparent);
 }

@@ -13,6 +13,12 @@
   到目标 tab 状态，只比对顶部 chrome 条（tab 行，内容区实时数据不做像素比对），
   另加确定性功能断言（根 backdrop-filter blur、chrome 0.58 / content 0.84·0.88 玻璃
   alpha、light 逐文本 WCAG 对比 0 失败、sidechat hasChat）。CSS 回归必现其一。
+- glass_anim ⌘J 折叠/展开 + 分栏拖拽帧采样场景（无像素基线）：动画期间每个 rAF 帧
+  采样面板根 [data-panel-id=thread-detail-secondary-panel] 的计算样式，断言
+  (a) backdrop-filter 自始至终含 blur（拖拽中被性能护栏降到 6px 也算持有），
+  (b) transition-duration 每个采样帧都等于 --panel-collapse-duration 的解析值
+  （220ms→0.22s；拖拽时该变量被置 0ms→0s，变量移除回退 0.22s），
+  (c) 确实采到中间帧（宽度在起止之间单调变化），证明动画真的按该时长在跑。
 
 退出码: 0 全绿 / 1 渲染回归 / 2 基线缺失或环境错误
 """
@@ -583,6 +589,212 @@ def scene_glass_tab(tab: str, theme: str) -> None:
             log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/has-chat")
 
 
+# ---------- glass_anim：⌘J 折叠/展开 + 分栏拖拽 帧采样回归（无像素基线） ----------
+# 设计：皮肤第 11 段把毛玻璃挂在面板根并让 skin 过渡跟随 --panel-collapse-duration
+# （panelTransitionTokens.ts / usePanelResizeSnap.ts 在拖拽分栏时把它临时置 0ms）。
+# 帧采样在页面内用 requestAnimationFrame 持续记录计算样式，Python 端对"每个采样帧"
+# 做断言，CSS 若把玻璃从根上摘掉、或把时长写死不再跟随变量、或动画根本没在跑，
+# 本场景必然红。
+ANIM_JS = r"""() => {
+  const root = document.querySelector('[data-panel-id="thread-detail-secondary-panel"]');
+  if (!root) return null;
+  let stop = false;
+  const grid = document.querySelector('[data-split-resize-grid-root]');
+  window.__dshAnim = {
+    frames: [],
+    begin() { stop = false; this.frames = []; const loop = () => {
+      if (stop) return;
+      const cs = getComputedStyle(root);
+      const r = root.getBoundingClientRect();
+      const varVal = grid ? getComputedStyle(grid).getPropertyValue('--panel-collapse-duration') : '';
+      window.__dshAnim.frames.push({
+        w: Math.round(r.width),
+        dur: cs.transitionDuration.split(',')[0].trim(),
+        bf: cs.backdropFilter,
+        varVal,
+      });
+      requestAnimationFrame(loop);
+    }; requestAnimationFrame(loop); },
+    end() { stop = true; },
+  };
+  return true;
+}"""
+
+
+def anim_reset(page) -> bool:
+    ok = page.evaluate(ANIM_JS)
+    page.evaluate("""() => { if (window.__dshAnim) { window.__dshAnim.frames = []; window.__dshAnim.end(); } }""")
+    return ok
+
+
+def expect_dur(var_val: str) -> str:
+    """--panel-collapse-duration 解析值 → 计算 transition-duration 的第一段。"""
+    return "0s" if var_val == "0ms" else "0.22s"
+
+
+def click_panel_toggle(page, prefix: str) -> bool:
+    """点当前可见的右面板开关（⌘J 等价）。1920px 桌面 chrome 下会同时存在
+    窗口级与面板内两枚同名按钮，只取可见且未被 aria-hidden 的那枚。"""
+    return page.evaluate(
+        """(p) => {
+          const vis = [...document.querySelectorAll('button')].filter(x =>
+            (x.getAttribute('aria-label') || '').startsWith(p) &&
+            x.getAttribute('aria-hidden') !== 'true');
+          const b = vis[0];
+          if (!b) return false;
+          const r = b.getBoundingClientRect();
+          if (r.width <= 1 || r.height <= 1 || getComputedStyle(b).visibility === 'hidden') return false;
+          b.click(); return true;
+        }""",
+        prefix,
+    )
+
+
+def assert_anim_frames(scene: str, what: str, frames: list, w0: int, w1: int) -> None:
+    """通用帧断言：每一帧都持 backdrop blur、时长跟随变量、并采到中间帧。"""
+    if not frames:
+        failures.append(f"{scene}/{what}: 未采到任何帧")
+        return
+    blur_ok = all("blur(" in (f.get("bf") or "") for f in frames)
+    dur_bad = [f for f in frames if f["dur"] != expect_dur(f.get("varVal", ""))]
+    mids = [f["w"] for f in frames if min(w0, w1) < f["w"] < max(w0, w1)]
+    ok = True
+    if not blur_ok:
+        ok = False
+        bad = [f["bf"] for f in frames if "blur(" not in (f.get("bf") or "")][:2]
+        failures.append(f"{scene}/{what}: 存在无 backdrop blur 的帧（{bad}）")
+    if dur_bad:
+        ok = False
+        bad = dur_bad[:2]
+        failures.append(f"{scene}/{what}: transition-duration 未跟随变量（{bad}）")
+    if len(mids) < 3:
+        ok = False
+        failures.append(f"{scene}/{what}: 采到中间帧过少（w0={w0} w1={w1} mids={mids[:6]}），动画可能未按 0.22s 跑")
+    log(
+        f"  [{'PASS' if ok else 'FAIL'}] {scene}/{what}  frames={len(frames)} "
+        f"w:{w0}→{w1} mids={len(mids)} blurEveryFrame={blur_ok} durs={sorted({f['dur'] for f in frames})}"
+    )
+
+
+def root_width(page):
+    return page.evaluate(
+        """() => { const el = document.querySelector('[data-panel-id="thread-detail-secondary-panel"]');
+          return el ? Math.round(el.getBoundingClientRect().width) : null; }"""
+    )
+
+
+def find_drag_handle(page):
+    return page.evaluate(
+        """() => {
+          const h = [...document.querySelectorAll('[data-panel-resize-snap-handle]')]
+            .find(x => { const r = x.getBoundingClientRect();
+              return r.height > 40 && r.left >= 0 && r.left <= innerWidth && r.top < innerHeight; });
+          if (!h) return null;
+          const r = h.getBoundingClientRect();
+          return { x: Math.round(r.x), y: Math.round(r.y + r.height / 2) };
+        }"""
+    )
+
+
+def scene_glass_anim() -> None:
+    scene = "glass_anim"
+    with playwright_sync() as page:
+        boot(page, "on", "dark", THREAD)
+        if not ensure_panel_open(page):
+            failures.append(f"{scene}: 右面板未能打开")
+            return
+        if not anim_reset(page):
+            failures.append(f"{scene}: 面板根未找到")
+            return
+
+        # ---- 阶段 A：⌘J 折叠 / 展开 ----
+        # 先采样后触发：begin() 先挂 rAF 循环，再点开关，动画全程都在采样窗口内。
+        def wait_open(width: int) -> None:
+            for _ in range(10):
+                if (root_width(page) or 0) >= width:
+                    return
+                click_panel_toggle(page, "Show right panel")
+                page.wait_for_timeout(500)
+
+        wait_open(200)
+        # A1 折叠：展开态 → 收成 ~0
+        page.evaluate("() => window.__dshAnim.begin()")
+        if not click_panel_toggle(page, "Hide right panel"):
+            failures.append(f"{scene}/collapse: 未找到 Hide right panel 按钮")
+        page.wait_for_timeout(800)
+        frames = page.evaluate("() => { window.__dshAnim.end(); return window.__dshAnim.frames; }")
+        ws = [f["w"] for f in frames]
+        start_w, end_w = (ws[0], ws[-1]) if ws else (0, 0)
+        assert_anim_frames(scene, "collapse", frames, start_w, end_w)
+        # 确认已收合（≤5px）再进 A2，避免状态漂移；并等 1.4s 让内容重挂载完成，
+        # 否则 Show 落在 transitionsReady=false 的 0ms 窗口内会“瞬开”而非动画。
+        if (root_width(page) or 0) > 5:
+            click_panel_toggle(page, "Hide right panel")
+            page.wait_for_timeout(900)
+        page.wait_for_timeout(1400)
+        # A2 展开：收合态 → 恢复
+        page.evaluate("() => window.__dshAnim.begin()")
+        if not click_panel_toggle(page, "Show right panel"):
+            failures.append(f"{scene}/expand: 未找到 Show right panel 按钮")
+        page.wait_for_timeout(800)
+        frames = page.evaluate("() => { window.__dshAnim.end(); return window.__dshAnim.frames; }")
+        ws = [f["w"] for f in frames]
+        start_w, end_w = (ws[0], ws[-1]) if ws else (0, 0)
+        assert_anim_frames(scene, "expand", frames, start_w, end_w)
+        page.wait_for_timeout(500)
+
+        # ---- 阶段 B：分栏拖拽 ----
+        h = find_drag_handle(page)
+        if not h:
+            failures.append(f"{scene}/drag: 未找到可拖拽分栏 handle")
+        else:
+            engaged = False
+            for attempt in range(3):
+                page.evaluate("() => { if (window.__dshAnim) window.__dshAnim.frames = []; }")
+                page.mouse.move(h["x"] - 8, h["y"])
+                page.mouse.down()
+                page.mouse.move(h["x"], h["y"], steps=2)
+                page.evaluate("() => window.__dshAnim.begin()")
+                page.mouse.move(h["x"] - 100, h["y"], steps=14)
+                page.wait_for_timeout(200)
+                page.mouse.up()
+                page.wait_for_timeout(150)
+                frames = page.evaluate("() => { window.__dshAnim.end(); return window.__dshAnim.frames; }")
+                ws = [f["w"] for f in frames if f["w"] > 0]
+                if len(ws) >= 3 and abs(ws[-1] - ws[0]) >= 25:
+                    engaged = True
+                    break
+                if attempt < 2:
+                    # 未咬合：恢复到已知展开宽再重试
+                    click_panel_toggle(page, "Show right panel")
+                    page.wait_for_timeout(700)
+            if not engaged:
+                failures.append(f"{scene}/drag: 拖拽未能改变面板宽度（handle={h}，未咬合？）")
+            else:
+                assert_anim_frames(scene, "drag", frames, ws[0], ws[-1])
+
+        # ---- 阶段 C：变量级联（确定性覆盖 snap 机制的 0ms 翻转）----
+        grid_var_ok = page.evaluate(
+            """() => {
+              const root = document.querySelector('[data-panel-id="thread-detail-secondary-panel"]');
+              const g = document.querySelector('[data-split-resize-grid-root]');
+              if (!root) return { ok: false, why: 'no root' };
+              const cs = () => getComputedStyle(root).transitionDuration.split(',')[0].trim();
+              const gEl = g || root;  // snap 把变量写在 grid 上；无 grid 时直接在根上验证
+              const prev = gEl.style.getPropertyValue('--panel-collapse-duration');
+              gEl.style.setProperty('--panel-collapse-duration', '0ms');
+              const dur0 = cs();
+              gEl.style.removeProperty('--panel-collapse-duration');
+              const dur1 = cs();
+              if (prev !== '') gEl.style.setProperty('--panel-collapse-duration', prev);
+              return { ok: dur0 === '0s' && dur1 === '0.22s', dur0, dur1 };
+            }"""
+        )
+        if not grid_var_ok.get("ok"):
+            failures.append(f"{scene}/var-cascade: 变量翻转未传导到 transition-duration（{grid_var_ok}）")
+        log(f"  [{'PASS' if grid_var_ok.get('ok') else 'FAIL'}] {scene}/var-cascade  0ms→{grid_var_ok.get('dur0')} 移除→{grid_var_ok.get('dur1')}")
+
+
 class PlaywrightSession:
     """轻量上下文：每个场景独立 browser/page，退出时关闭。"""
 
@@ -658,10 +870,14 @@ def main() -> int:
         ]:
             if not args.scene or args.scene == name or name.startswith(args.scene):
                 scene_glass_tab(tab, theme)
-    else:
-        skips.append("glass_dark_terminal / glass_light_terminal（无线程）")
-        if not args.scene or args.scene.startswith("glass_tab_"):
-            skips.append("glass_tab_* 逐 tab 玻璃 chrome（无线程）")
+    if not args.scene or args.scene.startswith("glass_anim"):
+        if THREAD:
+            scene_glass_anim()
+        else:
+            skips.append("glass_anim ⌘J/拖拽帧采样（无线程）")
+    elif not THREAD and (args.scene is None or args.scene.startswith("glass_")):
+        # 无线程且命中 glass 前缀：补记依赖线程的其余玻璃场景
+        skips.append("glass_dark_terminal / glass_light_terminal / glass_tab_*（无线程）")
 
     # 汇总
     log("")
