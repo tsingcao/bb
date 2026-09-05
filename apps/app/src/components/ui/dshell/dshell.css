@@ -333,6 +333,19 @@ html.dshell [data-panel-id="thread-detail-secondary-panel"] .xterm-viewport {
   background-color: var(--dsh-term-bg);
 }
 
+/* --- 12b. 通用终端 chrome：右侧面板之外的宿主同款画布 --------------------------
+ * ThreadTerminalPanel 的 [data-app-terminal] 挂点出现在所有终端宿主（右侧面板、
+ * 独立/最大化窗格、插件面板、抽屉）。画布颜色已由 ThreadTerminalView 读取第 12 段
+ * 令牌全局注入；此处把面板内同款的圆角 + 青色发丝描边 + letterbox 底色补齐到其余
+ * 宿主：面板内仍由上面带 !important 的透明 letterbox 优先（零变化），观感一致。 */
+html.dshell [data-app-terminal] .terminal.xterm {
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dsh-cyan-soft) 14%, transparent);
+}
+html.dshell [data-app-terminal] .xterm-viewport {
+  background-color: var(--dsh-term-bg);
+}
+
 /* --- 13. backdrop-filter 性能护栏 --------------------------------------- */
 /* dshell-panel-perf.ts 在面板滚动/终端高频重绘/分栏拖拽时挂 html.dshell-scrubbing：
    模糊半径 22px→6px（滚动静止 ~150ms 后恢复），底色提高不透明度以补偿降级后的
