@@ -37,6 +37,7 @@
 
 <h2>设置 · Appearance（dark）— 三态档位 · Original（默认 opt-in，首见 bb 原版）</h2>
 <img src="dshell_settings_original_dark.png">
+<p class="cap">卡片底部内联说明三档含义（Original — bb 原版 · Follow appearance — 暗色 DSH/亮色原版 · DSH skin — 两种外观均 DSH），与各档按钮的悬停提示同源；auto 档额外显示「Active/Inactive now」实时提示。以下三张同为此布局。</p>
 <h2>设置 · 三态档位 · Follow appearance + 亮色外观（未生效，跟随外观提示）</h2>
 <img src="dshell_settings_auto_light.png">
 <h2>设置 · 三态档位 · Follow appearance + 暗色外观（自动启用 DSH）</h2>
@@ -90,6 +91,13 @@ chrome 顶条 <code>oklab(0.165 … / 0.58)</code>、内容区 <code>/ 0.84</cod
 · <b>亮色逐文本对比（canvas 沿祖先链 alpha 合成取样，阈值 4.5 / 大号 3.0）</b>：Info 37 节点、Diff 122 节点、Side chat 11 节点全部通过，0 失败；<br>
 0 console/CSS errors（仅上游 jotai/插件噪音）。结论：玻璃 CSS 规则挂在共享面板容器上，天然覆盖全部 tool tab，无需逐 tab 特判；
 玻璃仅作用于 chrome 层，内容可读性由 84–88% 近实底 + 自绘终端画布保证，light 变体同理。</p>
+<h2>xterm 画布配色接入 dshell（蓝黑画布 + 青色高亮）</h2>
+<div class="row">
+<div><p class="cap">DSH 终端画布（dark）— 底色由 #000 换成蓝黑画布 rgb(8,11,18)，青色 ANSI 文本可辨</p><img src="term_canvas_dark.png"></div>
+<div><p class="cap">DSH 终端画布（light）— 玻璃 chrome 下仍是蓝黑终端井，与外壳同源</p><img src="term_canvas_light.png"></div>
+</div>
+<p class="cap">对照 · 皮肤关闭时保持原版 #272727 终端底（overlay 仅在 html.dshell 下生效）</p><img src="term_canvas_off.png" style="max-width:760px">
+
 <p class="note">生成方式：headless Playwright（chromium）1440×900 viewport 连到本地 bb dev server
 （http://127.0.0.1:18154），皮肤三态（localStorage bb.dshell.enabled = off/auto/on）：默认 off；auto 档暗色自动启用、亮色用原版。
 评审基线用途：前后对照该皮肤层的视觉回归；核心交互回归另有 41 例 vitest + typecheck 覆盖。</p>

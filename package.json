@@ -48,7 +48,9 @@
     "bb:dev": "cross-env NODE_ENV=development pnpm run --silent cli:prepare 1>&2 && cross-env NODE_ENV=development node packages/scripts/dist/commands/run-cli.js",
     "server": "pnpm --filter @bb/server start",
     "drizzle-studio": "cross-env NODE_ENV=development pnpm --filter @bb/db db:studio",
-    "drizzle-studio:prod": "cross-env NODE_ENV=production pnpm --filter @bb/db db:studio"
+    "drizzle-studio:prod": "cross-env NODE_ENV=production pnpm --filter @bb/db db:studio",
+    "test:dshell:snapshot": "python3 scripts/dshell-skin-snapshot.py --check",
+    "test:dshell:snapshot:update": "python3 scripts/dshell-skin-snapshot.py --update"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.1",
