@@ -4,8 +4,12 @@ DSH-WORKTABLE 视觉语言在 bb 外壳上的落地，配套 `apps/app/src/compo
 
 ## 内容
 - `gallery.html` — 前后对照总览（浏览器打开即可审阅）。
-- `*.png` — 17 张 1440×900 截图：原版 before（2）、皮肤 after（5，含紧凑视口）、
-  icon rail 三态（3）、三态档位 Original/Auto/Always（4，含 auto 亮/暗对照）、玻璃右侧面板/终端（3）。
+- `*.png` — 33 张截图：原版 before（2）、皮肤 after（5，含紧凑视口）、
+  icon rail 三态（3）、三态档位 Original/Auto/Always（4）、玻璃右侧面板/终端（3）、
+  全部 tool tab 逐 tab 审计 16 张（1920×1000，dark/light 并列对照）：
+  Info/Diff/Terminal/Side chat 暗色全景 4 + 1.5× 局部放大 4 +
+  Info/Diff/Side chat/Terminal 亮色全景 4 + 局部放大 4；
+  亮色变体逐文本 WCAG 对比（canvas 祖先链合成取样）0 失败，见 gallery.html 审计注。
 
 ## 复现（如需重拍）
 1. 本地起 bb dev server：`cd bb-fork && pnpm --filter @bb/app dev`（http://127.0.0.1:18154）。

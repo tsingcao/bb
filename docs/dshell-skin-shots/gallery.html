@@ -10,7 +10,12 @@
   img { max-width: 100%; border: 1px solid #333; border-radius: 8px; background: #000; }
   p.note { color: #888; font-size: 12px; }
 </style>
-</head>
+<style>
+.row{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0}
+.row>div{flex:1 1 46%;min-width:320px}
+.row img{max-width:100%;border:1px solid #334;border-radius:8px}
+.cap{font-size:12.5px;color:#8a93a6;margin:4px 0 6px;line-height:1.5}
+</style></head>
 <body>
 <h1>DSH / NEXTLoop 皮肤 — 截图基线（1440×900 Playwright 截图，除非注明）</h1>
 
@@ -58,6 +63,33 @@
 <h2>终端实时输入验证（echo glass-ok 已执行）</h2>
 <img src="xterm_live.png">
 
+
+<h2>玻璃右侧面板 · 全部 tool tab 逐 tab 审计（dark/light 并列对照，1920×1000 视口）</h2>
+<div class="row">
+<div><p class="cap">Info（dark）— 84% 玻璃内容底，字段/值文字直接落在玻璃上</p><img src="glass_tab_info.png"></div>
+<div><p class="cap">Info（light）— 88% 玻璃内容底，同一 Info 视图的亮色变体</p><img src="glass_tab_info_light.png"></div>
+</div>
+<div class="row">
+<div><p class="cap">Diff（dark）— 变更卡实底 navy 画布 oklch(0.165 0.016 264)，hunk 高亮可辨</p><img src="glass_tab_diff.png"></div>
+<div><p class="cap">Diff（light）— 变更卡实底亮画布 oklch(0.985 0.004 240)，行内 +N/−N 计数清晰</p><img src="glass_tab_diff_light.png"></div>
+</div>
+<div class="row">
+<div><p class="cap">Terminal（dark）— xterm 画布自绘不透明底，字迹 ~16:1</p><img src="glass_tab_terminal.png"></div>
+<div><p class="cap">Terminal（light）— light 玻璃面板 + 不透明黑终端窗，反差清晰</p><img src="glass_tab_terminal_light.png"></div>
+</div>
+<div class="row">
+<div><p class="cap">Side chat（dark）— “Replying to…” 引用 + composer 落在玻璃底上</p><img src="glass_tab_sidechat.png"></div>
+<div><p class="cap">Side chat（light）— 同视图亮色变体，quote/composer 可读</p><img src="glass_tab_sidechat_light.png"></div>
+</div>
+<p class="note"><b>逐窗格可读性审计</b>（computed style + 像素采样 + 逐文本 WCAG 对比，视口 1920×1000，skin=on 强制）：<br>
+chrome 顶条 <code>oklab(0.165 … / 0.58)</code>、内容区 <code>/ 0.84</code>（dark）；light 为 <code>0.985 / 0.58</code> 与 <code>/ 0.88</code>。<br>
+· Info：无内层不透明面，字段/值直接上玻璃（dark 亮像素 0.1% / light 暗像素 0.0%，两边互为镜像）；<br>
+· Diff：dark 为 2 个实底卡 <code>bg-background→oklch(0.165 0.016 264)</code> navy 画布 + border，hunk 文字亮像素 0.9% 可辨；light 为实底 <code>oklch(0.985 0.004 240)</code> 亮画布卡 + 0.7% 彩色 hunk 记号；<br>
+· Terminal：xterm 自绘不透明画布（~16:1 字迹对比），亮色主题下仍是黑终端窗、与 light 玻璃面板反差清晰；<br>
+· Side chat：composer/textarea 直接上玻璃（dark 暗区 97.8% / light 亮区 98.8%），“Replying to…” 引用上下文完整渲染；<br>
+· <b>亮色逐文本对比（canvas 沿祖先链 alpha 合成取样，阈值 4.5 / 大号 3.0）</b>：Info 37 节点、Diff 122 节点、Side chat 11 节点全部通过，0 失败；<br>
+0 console/CSS errors（仅上游 jotai/插件噪音）。结论：玻璃 CSS 规则挂在共享面板容器上，天然覆盖全部 tool tab，无需逐 tab 特判；
+玻璃仅作用于 chrome 层，内容可读性由 84–88% 近实底 + 自绘终端画布保证，light 变体同理。</p>
 <p class="note">生成方式：headless Playwright（chromium）1440×900 viewport 连到本地 bb dev server
 （http://127.0.0.1:18154），皮肤三态（localStorage bb.dshell.enabled = off/auto/on）：默认 off；auto 档暗色自动启用、亮色用原版。
 评审基线用途：前后对照该皮肤层的视觉回归；核心交互回归另有 41 例 vitest + typecheck 覆盖。</p>
