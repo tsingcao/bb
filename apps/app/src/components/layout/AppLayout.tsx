@@ -26,6 +26,7 @@ import {
 import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
 import { CommandPalette } from "@/components/commands/CommandPalette";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
+import { DshellMigrationBanner } from "@/components/settings/DshellMigrationBanner";
 import {
   resolveAutomationBreadcrumbs,
   resolveToolsAreaHeaderMeta,
@@ -816,6 +817,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     meta={meta}
                   />
                 ) : null}
+                <DshellMigrationBanner />
                 <main className="flex min-h-0 flex-1 flex-col p-4 md:p-5">
                   {children}
                 </main>
