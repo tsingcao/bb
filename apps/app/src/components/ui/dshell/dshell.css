@@ -290,6 +290,44 @@ html.dshell:not(.dark) [data-panel-id="thread-detail-secondary-panel"] aside
   background: color-mix(in oklab, var(--canvas) 88%, transparent);
 }
 
+/* --- 11b. 抽屉(drawer/compact ≤767px)同款玻璃：shelf 是覆盖层根，等价于面板根 ----
+ * 玻璃移到面板根后，抽屉形态（useIsCompactViewport → ThreadSecondaryPanel 走
+ * renderAsDrawer，由 CompactSecondaryPanelShelf 以 portal 覆盖）没有 data-panel-id
+ * 根可挂玻璃，仍是实体 bg-background。此处把 shelf 容器当作抽屉自己的“根”：
+ * 半透明 + backdrop blur + 青色发丝左边框（全宽态去框），aside 透明、内部
+ * chrome/content 层级用与 inline 面板相同的 58%/84%/88% 透明度档位。 */
+html.dshell [data-secondary-panel-shelf] {
+  background: color-mix(in oklab, var(--canvas) 72%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.4);
+  backdrop-filter: blur(22px) saturate(1.4);
+  border-left: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 24%, transparent);
+}
+html.dshell [data-secondary-panel-shelf][data-state="full"] {
+  border-left: 0;
+}
+html.dshell [data-secondary-panel-shelf] aside {
+  background: transparent;
+  border-left: 0;
+}
+html.dshell [data-secondary-panel-shelf] aside .shrink-0.select-none.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 58%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 16%, transparent);
+}
+html.dshell [data-secondary-panel-shelf] aside
+  > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 84%, transparent);
+}
+html.dshell [data-secondary-panel-shelf] aside .bg-sidebar {
+  background: transparent;
+}
+html.dshell [data-secondary-panel-shelf] aside section {
+  background: transparent;
+}
+html.dshell:not(.dark) [data-secondary-panel-shelf] aside
+  > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
+  background: color-mix(in oklab, var(--canvas) 88%, transparent);
+}
+
 /* --- 12. xterm 终端画布主题：蓝黑画布 + 青色高亮（与外壳同源） -------------
  * 由 ThreadTerminalView 的 applyDshellTerminalTheme 读取（html.dshell 下生效），
  * 画布背景、前景、光标、选区与 16 色 ANSI 全部从这套令牌解析；
