@@ -819,6 +819,7 @@ const Sidebar = React.forwardRef<
               ? "icon"
               : ""
         }
+        data-rail-peek={railActive && railPeek ? "true" : undefined}
         data-variant="sidebar"
         data-side="left"
         onMouseEnter={railActive ? beginRailPeek : undefined}

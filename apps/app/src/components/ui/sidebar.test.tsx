@@ -986,6 +986,28 @@ describe("sidebar icon rail", () => {
     expect(panel.getAttribute("data-collapsible")).toBe("icon");
   });
 
+  it("hover-peek marks data-rail-peek only while the rail is on and hovering", () => {
+    vi.useFakeTimers();
+    const panel = renderRailHarness({ rail: true });
+
+    // icon 形态：无 peek 标记
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+    expect(panel.getAttribute("data-rail-peek")).toBeNull();
+
+    fireEvent.mouseEnter(panel);
+    // 浮层覆盖契约：data-collapsible 回到空串（行标签随 bb 机制重新显示），
+    // 同时 data-rail-peek=true 供皮肤层把 gap 钉在 icon 宽度 → 不推挤内容。
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+    expect(panel.getAttribute("data-rail-peek")).toBe("true");
+
+    fireEvent.mouseLeave(panel);
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+    expect(panel.getAttribute("data-rail-peek")).toBeNull();
+  });
+
   it("a re-enter during the leave debounce cancels the scheduled collapse", () => {
     vi.useFakeTimers();
     const panel = renderRailHarness({ rail: true });

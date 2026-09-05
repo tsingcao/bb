@@ -138,6 +138,20 @@ html.dshell [data-sidebar="panel"] a:hover {
 html.dshell .group[data-collapsible="icon"] nav[data-testid="sidebar-navigation-region"] {
   padding: 4px;
 }
+/* 4b. rail hover-peek 浮层覆盖：展开时 gap 保持 icon 宽度 → 内容不被推挤，
+      面板以全宽浮在内容上方（z-10 高于内容区 z-auto），向右投青影区分层次。
+      行标签显隐沿用 bb 的 group-data-[collapsible=icon] 机制（data-collapsible
+      在 peek 期间回到空串即显示），仅随面板 200ms 宽度过渡淡入，无需逐行规则。 */
+html.dshell [data-rail-peek="true"] [data-sidebar="gap"] {
+  width: var(--sidebar-width-icon) !important;
+}
+html.dshell [data-rail-peek="true"] [data-sidebar="panel"] {
+  width: var(--sidebar-width);
+  border-right: 1px solid var(--sidebar-border);
+  box-shadow: 10px 0 30px -16px color-mix(in oklab, var(--dsh-cyan-soft) 26%, transparent),
+    1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 8%, transparent);
+}
+
 
 /* --- 5. 内容区：保持可读不透明，仅加顶部发丝辉光与角落环境光 --------------- */
 html.dshell [data-sidebar="inset"] {
