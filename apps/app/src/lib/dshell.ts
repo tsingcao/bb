@@ -5,14 +5,19 @@
  * components/ui/dshell/dshell.css），不触碰主题令牌来源以外的任何机制；
  * 关闭即恢复 bb 原版外观。跨标签页通过 `storage` 事件同步。
  *
- * - off   原版外观（opt-in 默认）：任何外观下都不启用 DSH。
+ * - off   原版外观（亮色首见默认）：任何外观下都不启用 DSH。
  * - auto  「跟随外观」：暗色外观自动启用 DSH，亮色保持 bb 原版。
  * - on    始终启用 DSH（两种外观都启用）。
  *
  * auto 模式监听 <html> 上 `.dark` 类的变化（MutationObserver），主题切换时
  * 即时生效；历史布尔值（"1"/"true"/"0"/"false"）读取时自动迁移。
+ *
+ * 首见默认：无存储键的新用户若 OS/主题偏好为暗色，启动即种子写入
+ * `bb.dshell.enabled = "auto"`（暗色用户开箱即见 DSH 皮肤）；亮色偏好保持
+ * off（opt-in，零副作用），仍可随时在设置里切换。
  */
 export const DSHELL_STORAGE_KEY = "bb.dshell.enabled";
+// 亮色/无偏好路径的首见默认；暗色首见会在 readStoredMode 里种子为 "auto"。
 export const DSHELL_DEFAULT_MODE = "off";
 
 export type DshellMode = "off" | "auto" | "on";
@@ -25,10 +30,39 @@ function isDshellMode(value: string | null | undefined): value is DshellMode {
   return value !== null && value !== undefined && MODE_VALUES.includes(value as DshellMode);
 }
 
+/** OS/主题偏好是否为暗色：html.dark 优先，显式 html.light 直接否定，
+ *  两者皆无（如模块初始化早于主题解析）时回退 OS prefers-color-scheme。 */
+function isDarkThemePreference(): boolean {
+  if (typeof document === "undefined") return false;
+  const html = document.documentElement;
+  if (html.classList.contains("dark")) return true;
+  if (html.classList.contains("light")) return false;
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    try {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
 function readStoredMode(): DshellMode {
   if (typeof localStorage === "undefined") return DSHELL_DEFAULT_MODE;
   const raw = localStorage.getItem(DSHELL_STORAGE_KEY);
-  if (raw === null || raw === "") return DSHELL_DEFAULT_MODE;
+  if (raw === null || raw === "") {
+    // 新用户（无键）：暗色偏好首见即 auto（跟随外观），种子写入持久化；
+    // 亮色偏好维持 off（opt-in），不写盘。
+    if (isDarkThemePreference()) {
+      try {
+        localStorage.setItem(DSHELL_STORAGE_KEY, "auto");
+      } catch {
+        // 忽略写入失败：本次会话仍按 auto 生效。
+      }
+      return "auto";
+    }
+    return DSHELL_DEFAULT_MODE;
+  }
   // 迁移旧布尔值："1"/"true" -> on，"0"/"false" -> off
   if (raw === "1" || raw === "true") return "on";
   if (raw === "0" || raw === "false") return "off";

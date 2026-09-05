@@ -14,7 +14,8 @@ import {
 
 export const DSHELL_SETTING_DESCRIPTION =
   "DSH-WORKTABLE style blueprint-glass chrome with a neon-cyan accent. " +
-  "Off by default so bb keeps its original look until you opt in.";
+  "Light users start on Original (opt-in); new dark-mode users start on " +
+  "Follow appearance automatically.";
 
 const MODE_OPTIONS: { value: DshellMode; label: string; hint: string }[] = [
   {
@@ -33,6 +34,11 @@ const MODE_OPTIONS: { value: DshellMode; label: string; hint: string }[] = [
     hint: "DSH in light and dark.",
   },
 ];
+
+// 卡片内联三档说明：与各档按钮的悬停提示同源（MODE_OPTIONS.hint），不会漂移。
+const MODE_HELP_LINE = MODE_OPTIONS.map(
+  (option) => `${option.label} — ${option.hint}`,
+).join(" · ");
 
 const MODE_BADGE: Record<DshellMode, string> = {
   off: "Opt-in",
@@ -66,6 +72,7 @@ export function DshellAppearanceSetting() {
 
   return (
     <div
+      data-testid="dshell-appearance-setting"
       className={cn(
         "rounded-xl border px-4 py-3.5 transition-[border-color,box-shadow,background-color] duration-200",
         mode === "off"
@@ -107,6 +114,12 @@ export function DshellAppearanceSetting() {
           ))}
         </ToggleGroup>
       </SettingsWithControl>
+      <p
+        data-testid="dshell-mode-help"
+        className="mt-1.5 text-xs leading-relaxed text-muted-foreground"
+      >
+        {MODE_HELP_LINE}
+      </p>
     </div>
   );
 }
