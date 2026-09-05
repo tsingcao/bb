@@ -264,3 +264,46 @@ html.dshell:not(.dark) [data-panel-id="thread-detail-secondary-panel"] aside
   > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
   background: color-mix(in oklab, var(--canvas) 88%, transparent);
 }
+
+/* --- 12. xterm 终端画布主题：蓝黑画布 + 青色高亮（与外壳同源） -------------
+ * 由 ThreadTerminalView 的 applyDshellTerminalTheme 读取（html.dshell 下生效），
+ * 画布背景、前景、光标、选区与 16 色 ANSI 全部从这套令牌解析；
+ * 暗/亮外观都保持「蓝黑终端井」，与玻璃 chrome 形成深度反差。 */
+html.dshell {
+  --dsh-term-fg: oklch(0.86 0.012 250);
+  --dsh-ansi-0: oklch(0.24 0.02 264);
+  --dsh-ansi-1: oklch(0.68 0.17 25);
+  --dsh-ansi-2: oklch(0.78 0.14 155);
+  --dsh-ansi-3: oklch(0.82 0.13 85);
+  --dsh-ansi-4: oklch(0.7 0.13 240);
+  --dsh-ansi-5: oklch(0.71 0.16 320);
+  --dsh-ansi-6: oklch(0.8 0.11 205);
+  --dsh-ansi-7: oklch(0.87 0.01 250);
+  --dsh-ansi-8: oklch(0.45 0.03 264);
+  --dsh-ansi-9: oklch(0.78 0.16 25);
+  --dsh-ansi-10: oklch(0.86 0.14 155);
+  --dsh-ansi-11: oklch(0.88 0.12 90);
+  --dsh-ansi-12: oklch(0.79 0.12 235);
+  --dsh-ansi-13: oklch(0.8 0.15 315);
+  --dsh-ansi-14: oklch(0.86 0.12 206);
+  --dsh-ansi-15: oklch(0.95 0.006 250);
+}
+html.dshell.dark {
+  --dsh-term-bg: oklch(0.15 0.015 264);
+  --dsh-term-cursor: var(--dsh-cyan);
+  --dsh-term-cursor-accent: oklch(0.15 0.015 264);
+  --dsh-term-selection: oklch(0.86 0.12 206 / 0.4);
+}
+html.dshell:not(.dark) {
+  --dsh-term-bg: oklch(0.16 0.016 260);
+  --dsh-term-cursor: oklch(0.8 0.12 208);
+  --dsh-term-cursor-accent: oklch(0.16 0.016 260);
+  --dsh-term-selection: oklch(0.7 0.11 210 / 0.4);
+}
+/* 画布色由 xterm 主题逐格绘制 + viewport 底色补齐 letterbox；仅补青色发丝内描边。 */
+html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dsh-cyan-soft) 14%, transparent);
+}
+html.dshell [data-panel-id="thread-detail-secondary-panel"] .xterm-viewport {
+  background-color: var(--dsh-term-bg);
+}

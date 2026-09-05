@@ -2,7 +2,9 @@ import { TERMINAL_DATA_MAX_BYTES } from "@bb/domain";
 import { Terminal } from "@xterm/xterm";
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyDshellTerminalTheme,
   buildTerminalThemeFromCssColors,
+  DSHELL_TERMINAL_THEME_VARS,
   captureTerminalContextMenuState,
   decodeTerminalOutputBytes,
   encodeTerminalInputChunks,
@@ -402,5 +404,27 @@ describe("loadTerminalWebglRenderer", () => {
 
     expect(loadTerminalWebglRenderer(terminal, () => addon)).toBe(false);
     expect(addon.dispose).toHaveBeenCalledOnce();
+  });
+});
+
+describe("applyDshellTerminalTheme (DSH terminal canvas)", () => {
+  it("keeps the base theme untouched when dshell is inactive or vars are absent", () => {
+    const base = { background: "--sidebar", cursorAccent: "--sidebar" };
+    const get = vi.fn(() => undefined);
+    expect(applyDshellTerminalTheme(get, base)).toBe(base);
+  });
+
+  it("exposes a complete canvas token map (bg/fg/cursor/selection + 16 ANSI)", () => {
+    const names = DSHELL_TERMINAL_THEME_VARS.map(([, v]) => v);
+    expect(names).toContain("--dsh-term-bg");
+    expect(names).toContain("--dsh-term-fg");
+    expect(names).toContain("--dsh-term-cursor");
+    expect(names).toContain("--dsh-term-cursor-accent");
+    expect(names).toContain("--dsh-term-selection");
+    for (let i = 0; i < 16; i += 1) {
+      expect(names).toContain(`--dsh-ansi-${i}`);
+    }
+    expect(names).toHaveLength(5 + 16);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

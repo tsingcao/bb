@@ -32,6 +32,7 @@ import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
 import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
 import { useAppNavigationHost } from "@/lib/app-navigation-host";
 import { copyToClipboardWithToast } from "@/lib/clipboard";
+import { subscribeDshellActive } from "@/lib/dshell";
 import type { MessageProseSelection } from "@/components/thread/timeline/SelectableMessageProse.js";
 import { TimelineSelectionMenu } from "@/components/thread/timeline/TimelineSelectionMenu.js";
 import { buildTerminalWebSocketUrl } from "./terminal-websocket-url";
@@ -281,6 +282,58 @@ export function buildTerminalThemeFromCssColors(
   };
 }
 
+/**
+ * DSH 皮肤下把 xterm 画布主题切到「蓝黑画布 + 青色高亮」：
+ * 变量集定义在 dshell.css 第 12 段（html.dshell 命名空间）。非 dshell 时返回原主题。
+ */
+export const DSHELL_TERMINAL_THEME_VARS: ReadonlyArray<
+  [keyof ITheme, string]
+> = [
+  ["background", "--dsh-term-bg"],
+  ["foreground", "--dsh-term-fg"],
+  ["cursor", "--dsh-term-cursor"],
+  ["cursorAccent", "--dsh-term-cursor-accent"],
+  ["selectionBackground", "--dsh-term-selection"],
+  ["black", "--dsh-ansi-0"],
+  ["red", "--dsh-ansi-1"],
+  ["green", "--dsh-ansi-2"],
+  ["yellow", "--dsh-ansi-3"],
+  ["blue", "--dsh-ansi-4"],
+  ["magenta", "--dsh-ansi-5"],
+  ["cyan", "--dsh-ansi-6"],
+  ["white", "--dsh-ansi-7"],
+  ["brightBlack", "--dsh-ansi-8"],
+  ["brightRed", "--dsh-ansi-9"],
+  ["brightGreen", "--dsh-ansi-10"],
+  ["brightYellow", "--dsh-ansi-11"],
+  ["brightBlue", "--dsh-ansi-12"],
+  ["brightMagenta", "--dsh-ansi-13"],
+  ["brightCyan", "--dsh-ansi-14"],
+  ["brightWhite", "--dsh-ansi-15"],
+];
+
+export function applyDshellTerminalTheme(
+  get: TerminalCssColorReader,
+  base: ITheme,
+): ITheme {
+  if (typeof document === "undefined") {
+    return base;
+  }
+  if (!document.documentElement.classList.contains("dshell")) {
+    return base;
+  }
+  let changed = false;
+  const overridden: ITheme = { ...base };
+  for (const [key, varName] of DSHELL_TERMINAL_THEME_VARS) {
+    const value = get(varName);
+    if (value) {
+      (overridden as Record<string, string | undefined>)[key] = value;
+      changed = true;
+    }
+  }
+  return changed ? overridden : base;
+}
+
 function buildTerminalTheme(): ITheme {
   if (typeof document === "undefined") {
     return {};
@@ -292,8 +345,9 @@ function buildTerminalTheme(): ITheme {
   document.body.appendChild(probe);
   const get = (name: string) => readResolvedCssColor(probe, name);
   const theme = buildTerminalThemeFromCssColors(get);
+  const resolved = applyDshellTerminalTheme(get, theme);
   probe.remove();
-  return theme;
+  return resolved;
 }
 
 interface ThreadTerminalViewProps {
@@ -666,6 +720,14 @@ export function ThreadTerminalView({
   const scheduleFitRef = useRef<TerminalFitScheduler | null>(null);
   const preferredTheme = usePreferredTheme();
   const appThemeEpoch = useAppThemeEpoch();
+  const [dshellEpoch, setDshellEpoch] = useState(0);
+  useEffect(
+    () =>
+      subscribeDshellActive(() => {
+        setDshellEpoch((epoch) => epoch + 1);
+      }),
+    [],
+  );
   const appNavigation = useAppNavigationHost();
   const handleOpenLinkByPreference = useCallback<MarkdownPreviewLinkHandler>(
     ({ href }) => appNavigation.openUrl({ url: href }),
@@ -1151,7 +1213,7 @@ export function ThreadTerminalView({
       return;
     }
     terminal.options.theme = buildTerminalTheme();
-  }, [preferredTheme, appThemeEpoch]);
+  }, [preferredTheme, appThemeEpoch, dshellEpoch]);
 
   const contextMenuLink = contextMenuState.link;
   const contextMenuSelectionText = contextMenuState.selectionText;
