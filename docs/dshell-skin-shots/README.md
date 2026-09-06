@@ -48,6 +48,8 @@ pnpm test:dshell:snapshot                 # 或 python3 scripts/dshell-skin-snap
 pnpm test:dshell:snapshot:update          # python3 scripts/dshell-skin-snapshot.py --update
 # 单场景：
 python3 scripts/dshell-skin-snapshot.py --check --scene rail_icon
+# CI 场景集（e2e harness 种子下可确定性验证的子集）：
+python3 scripts/dshell-skin-snapshot.py --check --ci
 ```
 
 - 依赖：Python env 需含 `playwright`（chromium 已装）+ `Pillow`。脚本自带解释器自举：
@@ -56,6 +58,18 @@ python3 scripts/dshell-skin-snapshot.py --check --scene rail_icon
 - 环境变量：`BB_URL`（默认 http://127.0.0.1:18154）；线程相关场景（玻璃/终端，含
   `glass_dark_terminal`/`glass_light_terminal`/`term_canvas_*`）需要
   `BB_E2E_THREAD=<线程 url>`，未设置时自动跳过（home/settings/rail 不依赖线程）。
+- CI 场景集（`--ci`）：`final_dark_home`/`final_light_home`/`dshell_settings`/`rail`/
+  `glass_tab_info`/`glass_dark_terminal`/`glass_light_terminal`/`glass_anim`。基线在 bb 的
+  e2e harness（`tests/integration/mobile-e2e/backend.ts`，fake provider + 固定种子
+  项目/线程）下生成，CI 每次重铺同一份种子 → 像素只随皮肤代码变化。
+  `glass_tab_diff`/`glass_tab_sidechat` 需要 changed files / 侧栏会话，harness 提供不了，
+  由本地 dev server + 真实线程覆盖。
+- 终端场景（`glass_dark_terminal`/`glass_light_terminal`）在 harness 下开真实终端：
+  右面板 → Open new tab → Start terminal。**shell 标题 tab 不入画**——zsh/bash/fish 由
+  宿主 shell 的 OSC 标题决定，随平台/机器不同，故 chrome 顶条只比左区（rel x 0–84：
+  info/diff 图标钮 + 玻璃底）与右区（maximize/hide 图标钮）两个纯皮肤面子区，
+  中间 tab 行跳过；画布底色只做色值断言（暗 rgb(8,11,18) / 亮 rgb(9,13,20)）。
+  终端会话按线程持久化，场景收尾会点 Close 清理，避免残留 tab 污染后续场景基线。
 - 退出码契约：**0** 全绿 / **1** 渲染回归（差异报告写入 `auto/.diff/*.diff.png`，
   双图并排 + 红色差异热区）/ **2** 基线缺失或环境错误（`--update` 校准后重跑）。
 - 阈值：差异像素（>12/255）占比 ≤0.5% 且平均绝对差 ≤1.5。非确定性内容（如 xterm

@@ -1,0 +1,181 @@
+name: DShell skin snapshot
+
+# dshell 皮肤层 headless Playwright 快照回归（scripts/dshell-skin-snapshot.py）。
+#
+# 数据封闭性：机器基线（docs/dshell-skin-shots/auto/）在 bb 的 e2e harness
+# （tests/integration/mobile-e2e/backend.ts，fake provider + 固定种子项目/线程）下
+# 生成并提交入库 —— 每次 CI 运行重铺同一份种子，数据指纹恒定，像素只随皮肤代码变化。
+# 因此 --check 跑的是 --ci 场景集（home/settings/rail + glass_tab_info +
+# glass_dark_terminal/glass_light_terminal + glass_anim，见脚本 CI_SCENES 注释）。
+# 终端场景已纳入：harness 的 host daemon 能开真实终端（右面板 → Open new tab →
+# Start terminal），脚本对会话做清理 + chrome 左/右子区比对，跨平台确定性成立；
+# diff/sidechat 场景需要 changed files / 侧栏会话，CI 不跑。
+#
+# 基线生命周期：docs/dshell-skin-shots/auto 是提交入库的机器基线 —— 无 cache 也能
+# 跑（checkout 自带）；这里仍做 restore/save cache，key 用基线内容 hash：
+#   * 命中 = 与当前提交内容一致，无害；
+#   * 显式 workflow_dispatch + refresh-dshell-baselines=true 时跑 --update 重拍，
+#     刷新后的基线存进 cache 并上传 artifact，供人工审阅后提交。
+# Playwright 浏览器另做独立 cache（key = playwright 版本），省去每次 ~150MB 下载。
+#
+# 触发：push（main / nextloop/ide-base 分支）+ PR + workflow_dispatch（可选重拍基线）。
+on:
+  push:
+    branches: [main, nextloop/ide-base]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      refresh-dshell-baselines:
+        description: 'Re-shoot the dshell skin machine baselines (--update; accepts current rendering)'
+        required: false
+        default: 'false'
+
+env:
+  PRIMARY_NODE_VERSION: "22.x"
+  PNPM_VERSION: "9.15.0"
+  PLAYWRIGHT_VERSION: "1.62.0"
+
+concurrency:
+  group: dshell-skin-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dshell-skin-snapshot:
+    name: DShell skin snapshot (Playwright chromium)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup workspace
+        uses: ./.github/actions/setup-workspace
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          pnpm-version: ${{ env.PNPM_VERSION }}
+          cache-prefix: dshell-skin
+
+      # 快照驱动的 app 由 e2e harness 以静态文件方式提供（BB_MOBILE_E2E_SERVE_APP=1
+      # 读取 apps/app/dist），与 mobile-e2e 工作流同款：先 build，再起 harness。
+      - name: Build the web app the snapshot drives
+        run: pnpm exec turbo run build --filter=@bb/app --output-logs=new-only
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install snapshot deps (playwright + Pillow, pinned)
+        # 像素比对要求本地/CI 同一浏览器：playwright 版本与本地生成基线时一致
+        # （1.62.0）；chromium 按该版本安装。
+        run: |
+          python -m pip install --upgrade pip
+          pip install "playwright==${{ env.PLAYWRIGHT_VERSION }}" pillow
+
+      - name: Cache Playwright browser
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ env.PLAYWRIGHT_VERSION }}
+
+      - name: Install Playwright chromium
+        run: python -m playwright install chromium --with-deps
+
+      # 基线 cache：docs/dshell-skin-shots/auto 提交入库，restore 只是快路径；
+      # 关键用途是 dispatch 重拍后把刷新基线持久化到 cache（key 随内容变化，
+      # 永不覆盖更新的提交内容）。
+      - name: Restore baseline cache
+        id: baseline-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: docs/dshell-skin-shots/auto
+          key: dshell-auto-${{ hashFiles('docs/dshell-skin-shots/auto/**') }}
+
+      # e2e harness：fake provider + 固定种子项目/线程，serves built app；就绪时
+      # 打印一行 JSON（serverUrl + threads.*）。turbo 会先构建其依赖（plugin-sdk 等）。
+      # `--log-order=stream` 保证持久任务的就绪行不被 turbo 分组缓冲。
+      - name: Start e2e backend (serves built app + seeds project/threads)
+        env:
+          BB_MOBILE_E2E_SERVE_APP: "1"
+        run: |
+          mkdir -p e2e-artifacts
+          pnpm exec turbo run e2e:mobile-backend --filter=@bb/integration-tests \
+            --output-logs=full --log-order=stream > e2e-artifacts/backend.log 2>&1 &
+          echo $! > e2e-artifacts/backend.pid
+          ready=0
+          for _ in $(seq 1 120); do
+            if grep -q '"serverUrl"' e2e-artifacts/backend.log 2>/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$(cat e2e-artifacts/backend.pid)" 2>/dev/null; then
+              echo "backend exited early"; cat e2e-artifacts/backend.log; exit 1
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "1" ]; then
+            echo "backend did not become ready in time"; cat e2e-artifacts/backend.log; exit 1
+          fi
+          # 解析就绪 JSON：serverUrl + 种子线程（rich 线程内容最全）
+          INFO="$(grep -m1 '"serverUrl"' e2e-artifacts/backend.log | sed -E 's/^.*(\{[^}]*"serverUrl"[^}]*\})/\1/')"
+          echo "$INFO"
+          echo "BB_URL=$(printf '%s' "$INFO" | python3 -c 'import json,sys; print(json.load(sys.stdin)["serverUrl"])')" >> "$GITHUB_ENV"
+          echo "BB_E2E_THREAD=/projects/$(printf '%s' "$INFO" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["projectId"] + "/threads/" + d["threads"]["rich"])')" >> "$GITHUB_ENV"
+
+      # 默认 --check；dispatch 带 refresh-dshell-baselines=true 时改跑 --update 重拍。
+      # --ci 只跑 harness 种子下确定性可验证的场景集（含终端玻璃场景）。
+      - name: Run dshell skin snapshot (--check or --update)
+        id: snapshot
+        env:
+          BB_URL: ${{ env.BB_URL }}
+          BB_E2E_THREAD: ${{ env.BB_E2E_THREAD }}
+        run: |
+          if [ "${{ github.event.inputs.refresh-dshell-baselines || 'false' }}" == "true" ]; then
+            echo "::notice::显式重拍 dshell 基线（refresh-dshell-baselines=true）—— 接受当前渲染为新基线"
+            python3 scripts/dshell-skin-snapshot.py --update --ci
+          else
+            python3 scripts/dshell-skin-snapshot.py --check --ci
+          fi
+
+      - name: Upload .diff report (only on check regression)
+        # --check 失败（rc1）时脚本把 双图并排+差异热区 写入 auto/.diff/；上传供人工定位。
+        # --update 模式不产生 .diff（if-no-files-found: ignore 兜底）。
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: dshell-skin-diff-${{ github.run_id }}
+          path: docs/dshell-skin-shots/auto/.diff/**
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload refreshed baselines (on explicit --update)
+        # dispatch 重拍产物：下载后人工审阅并提交（与基线提交纪律一致）。
+        if: github.event.inputs.refresh-dshell-baselines == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: dshell-baselines-updated-${{ github.run_id }}
+          path: docs/dshell-skin-shots/auto/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Save baseline cache (pass or explicit refresh)
+        # 只在绿 / 显式重拍时存 —— 红的运行绝不把失败截图存成新基线。
+        # key 用 hashFiles：基线内容变则 key 变，不会用旧缓存掩盖新提交。
+        if: success() || github.event.inputs.refresh-dshell-baselines == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: docs/dshell-skin-shots/auto
+          key: dshell-auto-${{ hashFiles('docs/dshell-skin-shots/auto/**') }}
+
+      - name: Upload harness backend log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: dshell-skin-backend-${{ github.run_id }}
+          path: e2e-artifacts/backend.log
+          if-no-files-found: ignore
+          retention-days: 7

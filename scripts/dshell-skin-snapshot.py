@@ -7,6 +7,10 @@
 - 默认 --check：把当前渲染与 docs/dshell-skin-shots/auto/ 基线比对（区域像素 diff +
   终端画布颜色断言），回归时输出 .diff 报告并返回非 0。
 - --update：把当前渲染写为新基线（皮肤有意改动后校准用）。
+- --ci：只跑 CI 场景集（见 CI_SCENES）——该集合在 bb 的 e2e harness（fake provider +
+  固定种子项目/线程）下可确定性验证；glass_dark_terminal/glass_light_terminal 已纳入
+  （harness 的 host daemon 能开真实终端），glass_tab_diff/sidechat 需要真实线程内容
+  （changed files / 侧栏会话），留在本地 dev server 跑。
 - 线程相关场景需要 BB_E2E_THREAD=<thread url>（如 /projects/.../threads/thr_xxx），
   未设置时自动跳过（home/settings/rail 场景不依赖线程）。
 - glass_tab_* 逐 tab 玻璃 chrome 场景（info/diff/sidechat × dark/light）：驱动右面板
@@ -75,6 +79,21 @@ GALLERY_DIR = REPO_ROOT / "docs" / "dshell-skin-shots"
 
 THREAD = os.environ.get("BB_E2E_THREAD", "").strip()
 BASE = os.environ.get("BB_URL", "http://127.0.0.1:18154")
+
+# CI 场景集（--ci）：bb e2e harness 种子下可确定性验证的场景前缀。
+#   * home/settings/rail 的 sidebar/dock 基线在 harness 种子（固定项目名/线程标题）下
+#     生成，CI 每次重铺同一份种子 → 数据指纹恒定，像素只随皮肤代码变化；
+#   * glass_tab_info(_light) 只比顶部 chrome 条 + 确定性功能断言（不依赖线程内容）；
+#   * glass_anim 是纯功能帧采样（无像素基线）。
+# 排除：glass_tab_diff/sidechat（需线程有 changed files / 侧栏会话）——harness 提供不了，
+# 由本地 dev server + 真实线程覆盖。
+# glass_dark_terminal/glass_light_terminal 已纳入：harness 跑真实 host daemon，能开真实终端
+# （右面板 → Open new tab → Start terminal）；chrome 条拆成左/右子区比对，避开中间的
+# shell 标题 tab（zsh/bash 随宿主平台不同），画布底色只做色值断言 → 跨平台确定性成立。
+CI_SCENES = (
+    "final_dark_home", "final_light_home", "dshell_settings", "rail",
+    "glass_tab_info", "glass_dark_terminal", "glass_light_terminal", "glass_anim",
+)
 
 # 皮肤自身的稳定表面（人工 gallery 的同名场景），见 docs/dshell-skin-shots/README.md
 GALLERY_SCENES = [
@@ -321,6 +340,26 @@ def scene_rail(state: str) -> None:
             compare_region(scene, "sidebar", shot)
 
 
+def close_terminal(page) -> None:
+    """关掉面板里当前打开的终端会话（点 tab 的 Close 钮）。
+
+    会话按线程持久化在服务端：不清理的话，同一次运行里后续的 glass_tab_* 场景
+    会在 tab 行看到残留的 shell tab，基线错位。失败时静默——下次运行靠新 harness
+    种子兜底。"""
+    page.evaluate(
+        """() => {
+          const vw = innerWidth;
+          const a = [...document.querySelectorAll('[data-panel-id="thread-detail-secondary-panel"] aside')]
+            .find(x => { const r = x.getBoundingClientRect(); return r.width > 150 && r.right > 80 && r.left < vw && r.bottom > 50; });
+          if (!a) return;
+          const close = [...a.querySelectorAll("button")].find(x =>
+            (x.getAttribute("aria-label") || "").startsWith("Close "));
+          if (close) close.click();
+        }"""
+    )
+    page.wait_for_timeout(1500)
+
+
 def scene_panel_glass(theme: str, thread: str) -> None:
     scene = "glass_dark_terminal" if theme == "dark" else "glass_light_terminal"
     with playwright_sync() as page:
@@ -332,13 +371,23 @@ def scene_panel_glass(theme: str, thread: str) -> None:
         if not root_rect:
             failures.append(f"{scene}/root: 面板未找到")
             return
-        # chrome 顶条（58% 玻璃，稳定）
-        chrome = {**root_rect, "h": min(root_rect["h"], 56)}
-        shot = Path("/tmp") / f"{scene}__chrome.png"
-        capture_region(page, str(shot), chrome)
-        compare_region(scene, "chrome", shot)
+        # chrome 顶条（58% 玻璃，稳定）拆成左/右子区：中间的 tab 行含 shell 标题 tab
+        # （zsh/bash/fish 由宿主 shell 的 OSC 标题决定，随平台/机器不同），不做像素比对。
+        # 左区只取 rel x 0–84（px-4 内边距 + info/diff 两个图标钮 + 玻璃底）——终端 tab
+        # 从 rel x≈80 起，收窄到 84 保证任何平台/标题宽度都不入画；右区取 maximize/hide
+        # 图标钮（rel w-220–w）。两区都是纯皮肤面，跨 macOS/CI-Ubuntu 确定性成立。
+        chrome_h = min(root_rect["h"], 56)
+        chrome_left = {"x": root_rect["x"], "y": root_rect["y"], "w": min(root_rect["w"], 84), "h": chrome_h}
+        shot = Path("/tmp") / f"{scene}__chrome_left.png"
+        capture_region(page, str(shot), chrome_left)
+        compare_region(scene, "chrome_left", shot)
+        if root_rect["w"] > 560:
+            chrome_right = {"x": root_rect["x"] + root_rect["w"] - 220, "y": root_rect["y"], "w": 220, "h": chrome_h}
+            shot = Path("/tmp") / f"{scene}__chrome_right.png"
+            capture_region(page, str(shot), chrome_right)
+            compare_region(scene, "chrome_right", shot)
         # 面板左缘 40px 竖列（玻璃 tint + 青色发丝边框）
-        edge = {"x": root_rect["x"], "y": root_rect["y"] + 56, "w": 40, "h": root_rect["h"] - 56}
+        edge = {"x": root_rect["x"], "y": root_rect["y"] + chrome_h, "w": 40, "h": root_rect["h"] - chrome_h}
         shot = Path("/tmp") / f"{scene}__edge.png"
         capture_region(page, str(shot), edge)
         compare_region(scene, "edge", shot)
@@ -351,9 +400,20 @@ def scene_panel_glass(theme: str, thread: str) -> None:
             failures.append(f"{scene}/canvas: 画布底色 {dom} ≠ 预期 {expected}（主题回归？）")
         else:
             log(f"  [PASS] {scene}/canvas  dominant={dom}")
+        # 收尾：关掉本场景开的终端会话。终端会话挂在线程上跨页面持久，若不清理，
+        # 后续场景（glass_tab_*）在同一线程上会看到残留的 shell tab，污染 tab 行基线。
+        close_terminal(page)
 
 
 def open_terminal(page) -> bool:
+    """在右面板打开真实终端（harness / dev server 通用）。
+
+    本地 dev server 的右面板常驻展开，旧版直接找 aside 里的 shell 按钮即可；
+    harness 下面板默认收合（宽度 1px），必须先开面板再走 "Open new tab →
+    Start terminal" 流程（NewTabFileSearch 的入口按钮）。
+    """
+    if not ensure_panel_open(page):
+        return False
     for _ in range(16):
         has = page.evaluate(
             """() => {
@@ -376,10 +436,10 @@ def open_terminal(page) -> bool:
                 return /^(zsh|bash|fish|sh)$/.test(t) && r.width > 2 && r.height > 2;
               });
               if (vis.length) { vis[vis.length - 1].click(); return; }
-              for (const pre of ["Show thread info panel", "Show diff panel"]) {
-                const b = [...f.querySelectorAll("button")].find(x => (x.getAttribute("aria-label") || "").startsWith(pre));
-                if (b && b.getAttribute("aria-pressed") === "true") b.click();
-              }
+              // 无 shell 按钮：切到 new-tab 视图找 Start terminal 入口
+              const nt = [...f.querySelectorAll("button")].find(x =>
+                (x.getAttribute("aria-label") || "").startsWith("Open new tab"));
+              if (nt) nt.click();
             }"""
         )
         page.wait_for_timeout(1400)
@@ -822,6 +882,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--update", action="store_true", help="把当前渲染写为新基线")
     parser.add_argument("--check", action="store_true", help="(默认) 校验模式：与基线比对并报告回归")
+    parser.add_argument("--ci", action="store_true", help="只跑 CI 场景集（harness 种子下确定性可验证的场景）")
     parser.add_argument("--scene", default=None, help="只跑指定场景前缀")
     parser.add_argument("--url", default=BASE)
     args = parser.parse_args()
@@ -837,28 +898,32 @@ def main() -> int:
             log(f"人工 gallery 缺图（需要补拍或改名）：{missing_gallery}")
 
     def want(scene: str) -> bool:
+        if args.ci:
+            return any(scene.startswith(ci) for ci in CI_SCENES)
         return args.scene is None or scene.startswith(args.scene)
 
     log(f"dshell 皮肤快照回归  url={BASE}  mode={'--update' if args.update else '--check'}")
+    if args.ci:
+        log(f"CI 场景集：{', '.join(CI_SCENES)}（diff/sidechat 需真实线程内容，CI 跳过）")
     if THREAD:
         log(f"线程场景启用（BB_E2E_THREAD={THREAD}）")
     else:
         log("未设置 BB_E2E_THREAD：线程相关场景（玻璃/终端）将跳过")
 
-    if not args.scene or args.scene.startswith("final_dark_home") or args.scene == "home":
+    if want("final_dark_home"):
         scene_home("dark")
-    if not args.scene or args.scene.startswith("final_light_home"):
+    if want("final_light_home"):
         scene_home("light")
     for (mode, theme) in [("off", "dark"), ("on", "dark"), ("auto", "light"), ("auto", "dark")]:
-        if not args.scene or args.scene.startswith("dshell_settings"):
+        if want("dshell_settings"):
             scene_settings(mode, theme)
     for state in ("full", "icon", "peek"):
-        if not args.scene or args.scene.startswith("rail"):
+        if want("rail"):
             scene_rail(state)
     if THREAD:
-        if not args.scene or args.scene.startswith("glass_dark_terminal"):
+        if want("glass_dark_terminal"):
             scene_panel_glass("dark", THREAD)
-        if not args.scene or args.scene.startswith("glass_light_terminal"):
+        if want("glass_light_terminal"):
             scene_panel_glass("light", THREAD)
         for (tab, theme, name) in [
             ("info", "dark", "glass_tab_info"),
@@ -868,9 +933,9 @@ def main() -> int:
             ("diff", "light", "glass_tab_diff_light"),
             ("sidechat", "light", "glass_tab_sidechat_light"),
         ]:
-            if not args.scene or args.scene == name or name.startswith(args.scene):
+            if want(name):
                 scene_glass_tab(tab, theme)
-    if not args.scene or args.scene.startswith("glass_anim"):
+    if want("glass_anim"):
         if THREAD:
             scene_glass_anim()
         else:
