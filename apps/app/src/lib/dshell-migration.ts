@@ -8,7 +8,8 @@
  * 一次可关闭的横幅，引导到 /settings/appearance。
  *
  * 契约：仅当存储里仍是旧布尔启用值（"1"/"true"）且未被关闭过时展示；
- * 用户点关闭或点开设置入口后写入 bb.dshell.migration.dismissed，永久不再展示。
+ * 仅用户点 ✕ 关闭后写入 bb.dshell.migration.dismissed，永久不再展示；
+ * 点「Open settings」只导航到 /settings/appearance，不写标记（横幅保持可发现）。
  */
 import { DSHELL_STORAGE_KEY } from "./dshell";
 

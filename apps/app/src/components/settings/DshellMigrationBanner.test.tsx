@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
 // DshellMigrationBanner 一次性迁移横幅：仅遗留布尔启用值用户可见；
-// 关闭按钮与「Open settings」都持久化关闭并即时隐藏；CTA 指向
-// /settings/appearance（DSH 三态档位入口）。
+// 仅 ✕ 关闭按钮持久化关闭并即时隐藏；「Open settings」只导航到
+// /settings/appearance（DSH 三态档位入口），不写关闭标记——横幅保持可发现
+// 直到显式关闭。
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -24,8 +25,11 @@ function renderBanner(enabled: string | null, dismissed: string | null = null) {
   seed(enabled, dismissed);
   return render(
     <MemoryRouter initialEntries={["/"]}>
+      {/* 真实 app 里横幅挂在常驻 shell 布局上，路由切换不卸载 → 测试同样放
+          在 Routes 之外，验证「Open settings 导航后横幅仍在」契约。 */}
+      <DshellMigrationBanner />
       <Routes>
-        <Route path="/" element={<DshellMigrationBanner />} />
+        <Route path="/" element={<div>home</div>} />
         <Route path="/settings/:section" element={<div>settings-appearance</div>} />
       </Routes>
     </MemoryRouter>,
@@ -77,13 +81,34 @@ describe("DshellMigrationBanner", () => {
     expect(screen.queryByTestId("dshell-migration-banner")).toBeNull();
   });
 
-  it("点 Open settings：导航到 /settings/appearance 并同时关闭横幅", () => {
+  it("点 Open settings：导航到 /settings/appearance 但不写关闭标记，横幅保持可见", () => {
     renderBanner("1");
 
     fireEvent.click(screen.getByRole("link", { name: /Open settings/ }));
 
+    // 导航发生（目标路由已渲染）
     expect(screen.getByText("settings-appearance")).not.toBeNull();
+    // 不写关闭标记 → 下次启动横幅仍会出现（保持可发现）
+    expect(window.localStorage.getItem(DSHELL_MIGRATION_DISMISSED_KEY)).toBeNull();
+    // 未显式关闭 → 横幅仍在（路由切换不卸载它，直到用户点 ✕）
+    expect(screen.queryByTestId("dshell-migration-banner")).not.toBeNull();
+    // 旧启用值保留（皮肤行为不变）
+    expect(window.localStorage.getItem(DSHELL_STORAGE_KEY)).toBe("1");
+  });
+
+  it("点 Open settings 后点 ✕：此时才持久化关闭，重挂载不再出现", () => {
+    const { unmount } = renderBanner("1");
+
+    fireEvent.click(screen.getByRole("link", { name: /Open settings/ }));
+    expect(window.localStorage.getItem(DSHELL_MIGRATION_DISMISSED_KEY)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Dismiss DSH skin notice/ }));
+
     expect(screen.queryByTestId("dshell-migration-banner")).toBeNull();
     expect(window.localStorage.getItem(DSHELL_MIGRATION_DISMISSED_KEY)).toBe("1");
+
+    unmount();
+    renderBanner("1", "1");
+    expect(screen.queryByTestId("dshell-migration-banner")).toBeNull();
   });
 });

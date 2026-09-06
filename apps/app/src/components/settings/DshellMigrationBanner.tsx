@@ -10,8 +10,9 @@ import {
 
 /**
  * 一次性迁移横幅：旧布尔启用值（"1"/"true"）用户首次见到新版本时，
- * 提示 DSH 皮肤已迁入 Settings（Original/Auto/Always 三态），
- * 点「Open settings」或关闭后永久不再展示。
+ * 提示 DSH 皮肤已迁入 Settings（Original/Auto/Always 三态）。
+ * 仅点 ✕ 关闭时写入关闭标记（永久不再展示）；点「Open settings」只导航
+ * 到 /settings/appearance，不写标记——横幅保持可发现，直到用户显式关闭。
  */
 export function DshellMigrationBanner() {
   const [visible, setVisible] = useState(shouldShowDshellMigrationBanner);
@@ -35,9 +36,8 @@ export function DshellMigrationBanner() {
         modes.
       </p>
       <Button asChild variant="outline" size="sm" className="shrink-0">
-        <Link to={getSettingsRoutePath("appearance")} onClick={dismiss}>
-          Open settings
-        </Link>
+        {/* 仅导航，不写关闭标记：横幅保持可发现，直到 ✕ 显式关闭 */}
+        <Link to={getSettingsRoutePath("appearance")}>Open settings</Link>
       </Button>
       <Button
         type="button"
