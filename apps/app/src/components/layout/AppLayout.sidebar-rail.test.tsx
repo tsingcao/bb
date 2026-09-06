@@ -349,6 +349,46 @@ describe("AppLayout sidebar rail persistence", () => {
     expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
   });
 
+  // --- sidebar.toggle 命令路径（⌘\）：与 railToggle 对称的 handler 捕获测试 ---
+  it("sidebar.toggle command collapses the open sidebar, returns true, and persists bb.sidebar.open", () => {
+    renderLayout();
+    expect(openState(getPanel())).toBe("expanded");
+    expect(railOn(getPanel())).toBe(false);
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBeNull();
+
+    let cmdReturn: boolean | undefined;
+    act(() => {
+      cmdReturn = sidebarToggleHandler()();
+    });
+    expect(cmdReturn).toBe(true);
+
+    expect(openState(getPanel())).toBe("collapsed");
+    // 关掉后整个侧栏区 offcanvas（rail 本就没开，不残留任何侧栏形态）
+    expect(getPanel().getAttribute("data-collapsible")).toBe("offcanvas");
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("false");
+    // sidebar.toggle 只动 open 原子：rail 偏好保持未写（无副作用）
+    expect(window.localStorage.getItem(SIDEBAR_RAIL_STORAGE_KEY)).toBeNull();
+  });
+
+  it("sidebar.toggle command from the closed state expands back to the full sidebar", () => {
+    window.localStorage.setItem(SIDEBAR_OPEN_STORAGE_KEY, "false");
+    renderLayout();
+    expect(openState(getPanel())).toBe("collapsed");
+    expect(railOn(getPanel())).toBe(false);
+
+    let cmdReturn: boolean | undefined;
+    act(() => {
+      cmdReturn = sidebarToggleHandler()();
+    });
+    expect(cmdReturn).toBe(true);
+
+    expect(openState(getPanel())).toBe("expanded");
+    // 无 rail 偏好时重开回完整侧栏（不是 icon rail）
+    expect(railOn(getPanel())).toBe(false);
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
+    expect(window.localStorage.getItem(SIDEBAR_RAIL_STORAGE_KEY)).toBeNull();
+  });
+
   it("closing the sidebar while the rail is on is allowed — rail persists and reopening returns to the icon rail", () => {
     // 逆向场景：rail 开（icon rail 形态）时用户点关闭钮 / ⌘\ —— 允许整体 offcanvas，
     // 不补「open=false → 解除 rail」规则：rail 是持久化偏好，关闭只藏整个侧栏区，
