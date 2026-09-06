@@ -272,4 +272,40 @@ describe("sidebar.railToggle from the command palette", () => {
       railToggleButton().querySelector('[data-icon="ChevronLeft"]'),
     ).toBeTruthy();
   });
+
+  it("renders the Toggle icon rail row in the palette with group and shortcut pill, and click activates it", async () => {
+    renderHarness();
+    expect(railProbeValue()).toBe("false");
+
+    // 打开面板并过滤到 rail 相关命令，找到渲染出的行
+    openPalette();
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: ">Toggle icon rail" },
+    });
+
+    const row = await waitFor(() => {
+      const found = screen
+        .getAllByRole("option")
+        .find((option) => option.textContent?.includes("Toggle icon rail"));
+      expect(found).toBeTruthy();
+      return found;
+    });
+
+    // 行内容可见性：标题 + 分组 + 快捷键药丸（palette-app-commands 单测只覆盖 metadata，这里断言真实渲染）
+    expect(row!.textContent).toContain("Toggle icon rail");
+    expect(row!.textContent).toContain("Window and layout");
+    const pill = row!.querySelector("kbd");
+    expect(pill).toBeTruthy();
+    expect(pill!.textContent).toContain("\\");
+    expect(pill!.textContent).toMatch(/Shift|⌘/);
+
+    // 指针点击行本身（既有测试走 Enter 路径，这里覆盖点击路径）
+    fireEvent.click(row!);
+    await waitFor(() => expect(screen.queryByRole("combobox")).toBeNull());
+    await waitFor(() => expect(railProbeValue()).toBe("true"));
+    expect(railToggleButton().getAttribute("aria-label")).toMatch(
+      /^Expand icon rail \(/,
+    );
+  });
 });
