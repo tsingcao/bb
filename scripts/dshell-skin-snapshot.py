@@ -309,6 +309,60 @@ def scene_settings(mode: str, theme: str) -> None:
             compare_region(scene, "sidebar", shot)
 
 
+RAIL_PUSH_JS = r"""() => {
+  const gap = document.querySelector('[data-sidebar="gap"]');
+  const inset = document.querySelector('[data-sidebar="inset"]');
+  const root = document.querySelector('[data-variant="sidebar"]');
+  if (!gap || !inset || !root) return { error: "gap/inset/root 缺失" };
+  const gr = gap.getBoundingClientRect();
+  const ir = inset.getBoundingClientRect();
+  return {
+    peek: root.getAttribute("data-rail-peek"),
+    gapW: Math.round(gr.width),
+    insetX: Math.round(ir.x),
+  };
+}"""
+
+
+def assert_peek_no_push(page, scene: str, icon_metrics: dict) -> None:
+    """peek 浮层不推挤内容区的确定性断言（像素层可能漏检的布局回归）。
+
+    dshell.css 4b 契约：peek 期间 data-rail-peek=true 时 gap 被钉在
+    --sidebar-width-icon（3rem=48px），面板以全宽浮在内容上方（fixed z-10），
+    内容容器（[data-sidebar="inset"]，随 gap 流式排布）x 不动。若 CSS 选择器
+    漂移（gap 不钉、面板不再 fixed/absolute），内容会被推挤——但 rail_peek 的
+    像素基线只截侧栏区域，可能漏检 → 这里直接量 DOM 几何。
+
+    icon_metrics: 移出 rail 回到 icon 态时量到的 {gapW, insetX} 基准。
+    """
+    info = page.evaluate(RAIL_PUSH_JS)
+    if "error" in info:
+        failures.append(f"{scene}/no-push: {info['error']}")
+        return
+    if info["peek"] != "true":
+        failures.append(f"{scene}/no-push: peek 未激活（data-rail-peek={info['peek']}）")
+        return
+    ok = True
+    if abs(info["gapW"] - icon_metrics["gapW"]) > 1:
+        ok = False
+        failures.append(
+            f"{scene}/no-push: peek 期间 gap 宽 {info['gapW']}px ≠ icon 态 {icon_metrics['gapW']}px"
+        )
+    if abs(info["insetX"] - icon_metrics["insetX"]) > 1:
+        ok = False
+        failures.append(
+            f"{scene}/no-push: peek 期间内容 x {info['insetX']}px ≠ icon 态 {icon_metrics['insetX']}px（推挤回归）"
+        )
+    if icon_metrics["gapW"] <= 0:
+        ok = False
+        failures.append(f"{scene}/no-push: icon 态 gap 宽异常 {icon_metrics['gapW']}px")
+    log(
+        f"  [{'PASS' if ok else 'FAIL'}] {scene}/no-push  "
+        f"gap={info['gapW']}px(icon {icon_metrics['gapW']}px)  "
+        f"insetX={info['insetX']}px(icon {icon_metrics['insetX']}px)"
+    )
+
+
 def scene_rail(state: str) -> None:
     scene = f"rail_{state}"
     with playwright_sync() as page:
@@ -327,10 +381,17 @@ def scene_rail(state: str) -> None:
             page.wait_for_timeout(600)
             rect = element_rect(page, '[data-sidebar="panel"]')
             if rect:
-                page.mouse.move(12, rect["y"] + rect["h"] // 2)  # 先移出
-                page.wait_for_timeout(250)
+                # 1) 先移出 rail → 回到 icon 态，量 gap/内容 x 基准（等 350ms 防抖 + 200ms 过渡）
+                page.mouse.move(700, rect["y"] + rect["h"] // 2)
+                page.wait_for_timeout(900)
+                icon_metrics = page.evaluate(RAIL_PUSH_JS)
+                # 2) 移入 rail → peek 激活，量同一组几何并断言不推挤
                 page.mouse.move(rect["x"] + 20, rect["y"] + rect["h"] // 2)
                 page.wait_for_timeout(500)
+                if "error" in icon_metrics:
+                    failures.append(f"{scene}/no-push: icon 态基准 {icon_metrics.get('error')}")
+                else:
+                    assert_peek_no_push(page, scene, icon_metrics)
         rect = element_rect(page, '[data-sidebar="panel"]')
         if not rect:
             failures.append(f"{scene}/sidebar: 侧栏未找到")
@@ -918,7 +979,8 @@ def main() -> int:
         if want("dshell_settings"):
             scene_settings(mode, theme)
     for state in ("full", "icon", "peek"):
-        if want("rail"):
+        # 传完整场景名：--scene rail_peek / --scene rail（前缀）都能精确命中对应状态
+        if want(f"rail_{state}"):
             scene_rail(state)
     if THREAD:
         if want("glass_dark_terminal"):
