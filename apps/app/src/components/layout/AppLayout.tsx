@@ -105,7 +105,10 @@ import { AppLayoutSidebar } from "./AppLayoutSidebar";
 import {
   useAppCommandHandler,
   useAppCommandShortcut,
+  useAppCommandShortcutHintsEnabled,
+  useIsAppCommandModifierHeld,
 } from "@/components/commands/AppCommandProvider";
+import { primaryModifierLabel } from "@/lib/app-keybindings";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import {
   shouldRestoreIOSViewportOnKeyboardDismissal,
@@ -249,9 +252,10 @@ interface SidebarTriggerTooltipProps {
 }
 
 /**
- * 侧栏触发按钮的 tooltip：主动作「Toggle sidebar」+ ⌘\ 药丸；rail 态下
- * 追加「Expand icon rail」+ ⌘⇧\ 药丸（从触发按钮也能看到收成/展开 rail 的
- * 快捷键）。文案全部走 sidebarMessages（i18n 接缝）。
+ * 侧栏触发按钮的 tooltip：主动作「Toggle sidebar」，rail 态下追加「Expand icon
+ * rail」。快捷键药丸与触发按钮旁的内联 AppCommandShortcutHint 同一交互——
+ * 按住主修饰键（⌘/Ctrl）才显示；未按住且快捷键提示总开关开着时，显示一行
+ * 「Hold ⌘ to show shortcuts」引导。文案全部走 sidebarMessages（i18n 接缝）。
  */
 function SidebarTriggerTooltip({
   trigger,
@@ -259,20 +263,35 @@ function SidebarTriggerTooltip({
   railToggleShortcut,
   rail,
 }: SidebarTriggerTooltipProps) {
+  const modifierHeld = useIsAppCommandModifierHeld();
+  const hintsEnabled = useAppCommandShortcutHintsEnabled();
+  const hasShortcuts =
+    sidebarShortcut !== null || (rail && railToggleShortcut !== null);
+  const platform =
+    typeof navigator === "undefined" ? "" : navigator.platform;
   return (
     <Tooltip>
       <TooltipTrigger asChild>{trigger}</TooltipTrigger>
       <TooltipContent side="right" align="start" className="flex flex-col gap-1">
         <span className="flex items-center gap-1.5">
           {sidebarMessages.toggleSidebarLabel}
-          {sidebarShortcut !== null ? (
+          {modifierHeld && sidebarShortcut !== null ? (
             <AppCommandShortcutPill shortcut={sidebarShortcut} />
           ) : null}
         </span>
         {rail && railToggleShortcut !== null ? (
           <span className="flex items-center gap-1.5">
             {sidebarMessages.railExpandLabel}
-            <AppCommandShortcutPill shortcut={railToggleShortcut} />
+            {modifierHeld ? (
+              <AppCommandShortcutPill shortcut={railToggleShortcut} />
+            ) : null}
+          </span>
+        ) : null}
+        {hintsEnabled && hasShortcuts && !modifierHeld ? (
+          <span className="text-xs text-subtle-foreground">
+            {sidebarMessages.holdModifierToShowShortcuts(
+              primaryModifierLabel(platform),
+            )}
           </span>
         ) : null}
       </TooltipContent>

@@ -32,6 +32,11 @@ export function matchesAppCommandContext(
   );
 }
 
+/** 主修饰键的展示标签（⌘ / Ctrl），用于「Hold ⌘ to show shortcuts」类引导文案。 */
+export function primaryModifierLabel(platform: string): string {
+  return isMacKeyboardPlatform(platform) ? "⌘" : "Ctrl";
+}
+
 export function formatAppShortcut(
   shortcut: AppShortcut,
   platform: string,

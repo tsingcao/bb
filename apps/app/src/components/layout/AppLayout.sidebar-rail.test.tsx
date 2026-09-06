@@ -26,6 +26,7 @@ const SIDEBAR_OPEN_STORAGE_KEY = "bb.sidebar.open";
 // （sidebar.toggle / sidebar.railToggle 都由 SidebarStateBridge 注册）。
 const commandMocks = vi.hoisted(() => ({
   handlers: new Map<string, () => boolean>(),
+  modifierHeld: false,
   shortcuts: new Map<string, { label: string; ariaKeyshortcuts: string }>(),
 }));
 
@@ -34,18 +35,26 @@ vi.mock("@/components/commands/AppCommandProvider", () => ({
     commandMocks.handlers.set(id, handler);
   },
   useAppCommandShortcut: (id: string) => commandMocks.shortcuts.get(id) ?? null,
-  useAppCommandShortcuts: () => new Map(),
+  // 复数钩子返回稳定实例（而非每次 new Map()）：AppSidebar 的 modifier-held 效果
+  // 依赖 threadJumpShortcuts 的引用稳定性，不稳会导致 showThreadShortcuts 每次
+  // 渲染重建 → setThreadShortcutKeysById(new Map()) 无限循环（生产环境该钩子
+  // 有 memo，无此问题；这是测试 mock 的稳定性契约）。
+  useAppCommandShortcuts: () => commandMocks.shortcuts,
   useAppCommandRunner: () => ({
     dispatch: () => false,
     isCommandAvailable: () => false,
   }),
-  useIsAppCommandModifierHeld: () => false,
+  useIsAppCommandModifierHeld: () => commandMocks.modifierHeld,
+  useAppCommandShortcutHintsEnabled: () => true,
   useIndexedAppCommandHandlers: () => new Map(),
 }));
 
 vi.mock("@/hooks/queries/system-queries", () => ({
   useSystemConfig: () => ({
     data: {
+      generalSettings: {
+        showKeyboardHints: true,
+      },
       experiments: {
         editMessages: false,
       },
@@ -187,6 +196,7 @@ describe("AppLayout sidebar rail persistence", () => {
     vi.restoreAllMocks();
     window.localStorage.clear();
     commandMocks.shortcuts.clear();
+    commandMocks.modifierHeld = false;
   });
 
   function renderLayout() {
@@ -301,7 +311,18 @@ describe("AppLayout sidebar rail persistence", () => {
     expect(window.localStorage.getItem(SIDEBAR_RAIL_STORAGE_KEY)).toBe("false");
   });
 
-  it("shows the railToggle shortcut hint in the sidebar trigger tooltip while the rail is on", () => {
+  function openSidebarTriggerTooltip() {
+    const trigger = document.querySelector('[data-sidebar="trigger"]');
+    if (!(trigger instanceof HTMLElement)) throw new Error("missing trigger");
+    // Radix Tooltip 在 pointerenter + pointermove 后按 delayDuration(700ms) 打开
+    fireEvent.pointerEnter(trigger);
+    fireEvent.pointerMove(trigger);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+  }
+
+  it("shows labels and a hold-modifier guidance line in the sidebar trigger tooltip until the modifier is held", () => {
     window.localStorage.setItem(SIDEBAR_RAIL_STORAGE_KEY, "true");
     commandMocks.shortcuts.set("sidebar.toggle", {
       label: "⌘\\",
@@ -313,23 +334,42 @@ describe("AppLayout sidebar rail persistence", () => {
     });
     vi.useFakeTimers();
     renderLayout();
+    openSidebarTriggerTooltip();
 
-    const trigger = document.querySelector('[data-sidebar="trigger"]');
-    if (!(trigger instanceof HTMLElement)) throw new Error("missing trigger");
-    // Radix Tooltip 在 pointerenter + pointermove 后按 delayDuration(700ms) 打开
-    fireEvent.pointerEnter(trigger);
-    fireEvent.pointerMove(trigger);
-    act(() => {
-      vi.advanceTimersByTime(1000);
-    });
-
+    // 未按住主修饰键：只显示命令标签 + 引导行，不显示快捷键药丸
     expect(screen.getAllByText("Toggle sidebar").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Expand icon rail").length).toBeGreaterThan(0);
-    // tooltip 里 rail 药的 kbd 文本
-    const pill = [...document.querySelectorAll("kbd")].find(
-      (kbd) => kbd.textContent === "⌘⇧\\",
+    expect(
+      screen.getAllByText(/Hold (⌘|Ctrl) to show shortcuts/).length,
+    ).toBeGreaterThan(0);
+    expect(document.querySelectorAll("kbd").length).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("shows the sidebar and rail shortcut pills in the trigger tooltip while the modifier is held", () => {
+    window.localStorage.setItem(SIDEBAR_RAIL_STORAGE_KEY, "true");
+    commandMocks.shortcuts.set("sidebar.toggle", {
+      label: "⌘\\",
+      ariaKeyshortcuts: "Meta+\\",
+    });
+    commandMocks.shortcuts.set("sidebar.railToggle", {
+      label: "⌘⇧\\",
+      ariaKeyshortcuts: "Meta+Shift+\\",
+    });
+    commandMocks.modifierHeld = true;
+    vi.useFakeTimers();
+    renderLayout();
+    openSidebarTriggerTooltip();
+
+    // 按住主修饰键：药丸出现、引导行消失（与触发按钮旁的内联 hint 同一交互）
+    expect(screen.getAllByText("Toggle sidebar").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Expand icon rail").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Hold (⌘|Ctrl) to show shortcuts/)).toBeNull();
+    const pills = [...document.querySelectorAll("kbd")].map(
+      (kbd) => kbd.textContent,
     );
-    expect(pill).toBeDefined();
+    expect(pills).toContain("⌘\\");
+    expect(pills).toContain("⌘⇧\\");
     vi.useRealTimers();
   });
 

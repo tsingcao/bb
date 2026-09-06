@@ -12,4 +12,7 @@ export const sidebarMessages = {
   /** 把快捷键提示合成进 label/aria/tooltip 文案，如 "Toggle icon rail (⌘⇧\)"。 */
   shortcutHint: (label: string, shortcut: string): string =>
     `${label} (${shortcut})`,
+  /** 未按住主修饰键时 tooltip 里的引导行，如 "Hold ⌘ to show shortcuts"。 */
+  holdModifierToShowShortcuts: (modifierLabel: string): string =>
+    `Hold ${modifierLabel} to show shortcuts`,
 } as const;

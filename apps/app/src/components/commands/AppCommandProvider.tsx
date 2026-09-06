@@ -483,6 +483,15 @@ export function useIsAppCommandModifierHeld(): boolean {
   return useContext(AppCommandModifierHeldContext);
 }
 
+/** 快捷键提示总开关（Settings → Show keyboard hints），引导文案需据此显隐。 */
+export function useAppCommandShortcutHintsEnabled(): boolean {
+  const systemConfig = useSystemConfig();
+  return (
+    systemConfig.data?.generalSettings?.showKeyboardHints ??
+    defaultAppSettings.showKeyboardHints
+  );
+}
+
 export function useAppCommandShortcuts(
   commands: readonly AppCommandId[],
 ): ReadonlyMap<AppCommandId, AppShortcutPresentation> {

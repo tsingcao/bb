@@ -23,6 +23,7 @@ vi.mock("@/components/commands/AppCommandProvider", () => ({
     isCommandAvailable: () => false,
   }),
   useIsAppCommandModifierHeld: () => false,
+  useAppCommandShortcutHintsEnabled: () => true,
 }));
 
 vi.mock("@/components/sidebar/AppSidebar", () => ({
