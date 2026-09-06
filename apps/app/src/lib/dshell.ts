@@ -172,7 +172,8 @@ if (typeof document !== "undefined" && typeof MutationObserver !== "undefined") 
   }
 }
 
-// 其他标签页改档位时同步到当前页。
+// 其他标签页改档位时同步到当前页：档位 + 生效态都对齐（与 setDshellMode 同构，
+// 生效态翻转也通知 active 订阅者，否则设置卡等 UI 会停留在旧档位）。
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (event) => {
     if (event.key !== DSHELL_STORAGE_KEY) return;
@@ -180,8 +181,10 @@ if (typeof window !== "undefined") {
     if (raw === null) return;
     const next = isDshellMode(raw) ? raw : raw === "1" || raw === "true" ? "on" : "off";
     if (next === dshellMode) return;
+    const prevActive = lastAppliedActive;
     dshellMode = next;
     applyDshellClass();
     for (const listener of modeListeners) listener();
+    if (prevActive !== lastAppliedActive) notifyActive();
   });
 }

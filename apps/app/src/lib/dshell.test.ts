@@ -7,7 +7,9 @@
 //      同档 no-op 与非法档位拒绝写盘；
 //   4. 档位解析——存储的 on/off/auto 启动即落到对应档位；
 //   5. 监听通知——mode/active 订阅在档位变更与生效态翻转时收到通知；
-//   6. auto 跟随外观——<html> 的 .dark 类变化经 MutationObserver 即时翻转。
+//   6. auto 跟随外观——<html> 的 .dark 类变化经 MutationObserver 即时翻转；
+//   7. 跨标签页同步——storage 事件把其它标签页的档位/生效态同步过来，
+//      旧布尔值（"1"/"0"）同样在事件路径迁移。
 // dshell.ts 是模块级单例（import 时读 localStorage 并 applyDshellClass），
 // 每个用例 vi.resetModules() + 动态 import 模拟一次全新启动。
 //
@@ -270,5 +272,88 @@ describe("lib/dshell opt-in 契约", () => {
     expect(mod.isDshellActive()).toBe(false);
     expect(document.documentElement.classList.contains("dshell")).toBe(false);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("lib/dshell 跨标签页同步（storage 事件）", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.classList.remove("dshell", "dark", "light");
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    restoreMatchMedia();
+  });
+
+  /** 模拟其它标签页写入 bb.dshell.enabled 后当前页收到的 storage 事件。 */
+  function storageEventFromOtherTab(newValue: string | null, key = KEY) {
+    window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
+  }
+
+  it("其它标签页改档位：档位/类/生效态同步，mode 与 active 订阅者都收到通知", async () => {
+    const mod = await boot("off");
+    const modeListener = vi.fn();
+    const activeListener = vi.fn();
+    mod.subscribeDshellMode(modeListener);
+    mod.subscribeDshellActive(activeListener);
+
+    expect(mod.getDshellMode()).toBe("off");
+    expect(mod.isDshellActive()).toBe(false);
+    expect(document.documentElement.classList.contains("dshell")).toBe(false);
+
+    storageEventFromOtherTab("on");
+    expect(mod.getDshellMode()).toBe("on");
+    expect(mod.isDshellActive()).toBe(true);
+    expect(document.documentElement.classList.contains("dshell")).toBe(true);
+    expect(modeListener).toHaveBeenCalledTimes(1);
+    expect(activeListener).toHaveBeenCalledTimes(1);
+
+    // 切回 off：生效态翻转 → active 订阅者再通知一次
+    storageEventFromOtherTab("off");
+    expect(mod.getDshellMode()).toBe("off");
+    expect(document.documentElement.classList.contains("dshell")).toBe(false);
+    expect(modeListener).toHaveBeenCalledTimes(2);
+    expect(activeListener).toHaveBeenCalledTimes(2);
+  });
+
+  it("storage 事件迁移旧布尔值：1/true → on，0/false → off（事件路径同启动路径）", async () => {
+    const mod = await boot("off");
+
+    storageEventFromOtherTab("1");
+    expect(mod.getDshellMode()).toBe("on");
+    expect(mod.isDshellActive()).toBe(true);
+    expect(document.documentElement.classList.contains("dshell")).toBe(true);
+
+    storageEventFromOtherTab("0");
+    expect(mod.getDshellMode()).toBe("off");
+    expect(document.documentElement.classList.contains("dshell")).toBe(false);
+
+    storageEventFromOtherTab("true");
+    expect(mod.getDshellMode()).toBe("on");
+
+    storageEventFromOtherTab("false");
+    expect(mod.getDshellMode()).toBe("off");
+  });
+
+  it("storage 事件忽略非本键、键被删除（newValue=null）与同档位 no-op", async () => {
+    const mod = await boot("auto");
+    const modeListener = vi.fn();
+    mod.subscribeDshellMode(modeListener);
+
+    // 非本键
+    storageEventFromOtherTab("on", "some.other.key");
+    expect(mod.getDshellMode()).toBe("auto");
+
+    // 键被删除
+    storageEventFromOtherTab(null);
+    expect(mod.getDshellMode()).toBe("auto");
+
+    // 同档位 no-op
+    storageEventFromOtherTab("auto");
+    expect(mod.getDshellMode()).toBe("auto");
+
+    expect(modeListener).not.toHaveBeenCalled();
   });
 });
