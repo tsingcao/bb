@@ -4,14 +4,32 @@ DSH-WORKTABLE 视觉语言在 bb 外壳上的落地，配套 `apps/app/src/compo
 
 ## 内容
 - `gallery.html` — 前后对照总览（浏览器打开即可审阅）。
-- `*.png` — 33 张截图：原版 before（2）、皮肤 after（5，含紧凑视口）、
-  icon rail 三态（3）、三态档位 Original/Auto/Always（4）、玻璃右侧面板/终端（3）、
-  全部 tool tab 逐 tab 审计 16 张（1920×1000，dark/light 并列对照）：
+- `*.png` — 38 张截图：原版 before（2）、皮肤 after（5，含紧凑视口）、
+  icon rail 三态（3）、三态档位 Original/Auto/Always（4）、一次性迁移横幅（2，
+  dark/light）、玻璃右侧面板/终端（3）、终端画布色值三态（3）、全部 tool tab
+  逐 tab 审计 16 张（1920×1000，dark/light 并列对照）：
   Info/Diff/Terminal/Side chat 暗色全景 4 + 1.5× 局部放大 4 +
   Info/Diff/Side chat/Terminal 亮色全景 4 + 局部放大 4；
   亮色变体逐文本 WCAG 对比（canvas 祖先链合成取样）0 失败，见 gallery.html 审计注。
 - 三态档位卡片在控件下方内联一行三档说明（`MODE_HELP_LINE`，与各档按钮悬停提示同源，
   改动一处两处同步），auto 档额外显示 Active/Inactive now 实时提示。
+
+## 一次性迁移横幅（legacy 布尔值 → 三态）
+
+opt-in 三态（Original/Auto/Always）落地前，旧版本用布尔值 `bb.dshell.enabled="1"`/
+`"true"` 表示启用。`readStoredMode` 读取时把旧值迁移为 on，但存储里仍是旧值——这些
+用户可能不知道新增的 Settings 入口，因此启动时展示**一次可关闭的横幅**引导到
+`/settings/appearance`。
+
+- **触发条件**：存储里仍是遗留布尔启用值且 `bb.dshell.migration.dismissed` 未写
+  （`shouldShowDshellMigrationBanner`，纯函数无副作用）。
+- **两个 CTA**：「Open settings」跳转 `/settings/appearance`（Appearance 标签），
+  不写关闭标记——横幅保持可发现直到显式关闭；仅 ✕ 按钮写
+  `bb.dshell.migration.dismissed="1"` **永久不再展示**（隐私模式写入失败仅本次会话隐藏）。
+- **截图**：`migration_banner_dark.png` / `migration_banner_light.png`（1440×900，
+  横幅钉在顶栏侧栏右侧，dark/light 并列见 gallery.html）。
+- **复现**：本地 dev server 上 `localStorage["bb.dshell.enabled"]="1"`（无 dismissed
+  键）后整页 reload，横幅即出现在首页顶栏。
 
 ## 复现（如需重拍）
 1. 本地起 bb dev server：`cd bb-fork && pnpm --filter @bb/app dev`（http://127.0.0.1:18154）。
@@ -61,11 +79,16 @@ python3 scripts/dshell-skin-snapshot.py --check --ci
   `glass_dark_terminal`/`glass_light_terminal`/`term_canvas_*`）需要
   `BB_E2E_THREAD=<线程 url>`，未设置时自动跳过（home/settings/rail 不依赖线程）。
 - CI 场景集（`--ci`）：`final_dark_home`/`final_light_home`/`dshell_settings`/`rail`/
-  `glass_tab_info`/`glass_dark_terminal`/`glass_light_terminal`/`glass_anim`。基线在 bb 的
-  e2e harness（`tests/integration/mobile-e2e/backend.ts`，fake provider + 固定种子
-  项目/线程）下生成，CI 每次重铺同一份种子 → 像素只随皮肤代码变化。
-  `glass_tab_diff`/`glass_tab_sidechat` 需要 changed files / 侧栏会话，harness 提供不了，
-  由本地 dev server + 真实线程覆盖。
+  `migration_banner`/`glass_tab_info`/`glass_dark_terminal`/`glass_light_terminal`/
+  `glass_anim`。基线在 bb 的 e2e harness（`tests/integration/mobile-e2e/backend.ts`，
+  fake provider + 固定种子项目/线程）下生成，CI 每次重铺同一份种子 → 像素只随皮肤
+  代码变化。`glass_tab_diff`/`glass_tab_sidechat` 需要 changed files / 侧栏会话，
+  harness 提供不了，由本地 dev server + 真实线程覆盖。
+- `migration_banner_dark/light`：一次性迁移横幅场景——seed legacy `"1"` + 清 dismissed
+  后横幅出现在首页顶栏，横幅条区域入基线；点 ✕ 后确定性断言横幅消失且
+  `bb.dshell.migration.dismissed="1"`（一次性语义，不依赖像素）。注：应用里固定
+  z-40 的「Show right panel」钮与横幅 ✕ 同一坐标，Playwright 坐标点击会被拦截，
+  场景用 DOM 级 `.click()` 驱动 dismiss。
 - 终端场景（`glass_dark_terminal`/`glass_light_terminal`）在 harness 下开真实终端：
   右面板 → Open new tab → Start terminal。**shell 标题 tab 不入画**——zsh/bash/fish 由
   宿主 shell 的 OSC 标题决定，随平台/机器不同，故 chrome 顶条只比左区（rel x 0–84：

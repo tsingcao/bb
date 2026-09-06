@@ -17,6 +17,9 @@
   到目标 tab 状态，只比对顶部 chrome 条（tab 行，内容区实时数据不做像素比对），
   另加确定性功能断言（根 backdrop-filter blur、chrome 0.58 / content 0.84·0.88 玻璃
   alpha、light 逐文本 WCAG 对比 0 失败、sidechat hasChat）。CSS 回归必现其一。
+- migration_banner_dark/light：一次性迁移横幅场景——seed legacy "1" + 清 dismissed，
+  横幅条区域入基线，点 ✕ 后断言横幅消失且 bb.dshell.migration.dismissed="1"
+  （一次性语义的确定性断言，不依赖像素）。
 - glass_anim ⌘J 折叠/展开 + 分栏拖拽帧采样场景（无像素基线）：动画期间每个 rAF 帧
   采样面板根 [data-panel-id=thread-detail-secondary-panel] 的计算样式，断言
   (a) backdrop-filter 自始至终含 blur（拖拽中被性能护栏降到 6px 也算持有），
@@ -90,8 +93,11 @@ BASE = os.environ.get("BB_URL", "http://127.0.0.1:18154")
 # glass_dark_terminal/glass_light_terminal 已纳入：harness 跑真实 host daemon，能开真实终端
 # （右面板 → Open new tab → Start terminal）；chrome 条拆成左/右子区比对，避开中间的
 # shell 标题 tab（zsh/bash 随宿主平台不同），画布底色只做色值断言 → 跨平台确定性成立。
+# migration_banner（dark/light）：一次性迁移横幅只依赖 localStorage（legacy "1" + 无
+# dismissed 键），不依赖线程内容 → harness 种子下确定性成立，纳入 CI。
 CI_SCENES = (
     "final_dark_home", "final_light_home", "dshell_settings", "rail",
+    "migration_banner",
     "glass_tab_info", "glass_dark_terminal", "glass_light_terminal", "glass_anim",
 )
 
@@ -102,6 +108,7 @@ GALLERY_SCENES = [
     "dshell_settings_auto_light", "dshell_settings_auto_dark",
     "rail_full", "rail_icon", "rail_peek",
     "glass_dark_terminal", "glass_light_terminal",
+    "migration_banner_dark", "migration_banner_light",
     "glass_tab_info", "glass_tab_diff", "glass_tab_terminal", "glass_tab_sidechat",
     "glass_tab_info_light", "glass_tab_diff_light", "glass_tab_sidechat_light",
     "term_canvas_dark", "term_canvas_light", "term_canvas_off",
@@ -271,6 +278,70 @@ def scene_home(theme: str) -> None:
             shot = Path("/tmp") / f"{scene}__{region}.png"
             capture_region(page, str(shot), rect)
             compare_region(scene, region, shot)
+
+
+def scene_migration_banner(theme: str) -> None:
+    """一次性迁移横幅（legacy 布尔值 → 三态）场景。
+
+    契约（见 lib/dshell-migration.ts）：存储里仍是旧布尔启用值（"1"/"true"）且
+    bb.dshell.migration.dismissed 未写时，首页顶栏出现可关闭横幅；仅点 ✕ 关闭
+    写入 dismissed 永久不再展示，「Open settings」只导航不写标记。
+    - 像素基线：横幅条区域（[data-testid="dshell-migration-banner"] bbox）。
+    - 确定性断言（不依赖像素）：横幅出现 → 点 ✕ 关闭 → 元素消失 →
+      localStorage.bb.dshell.migration.dismissed === "1"。
+    """
+    scene = f"migration_banner_{theme}"
+    with playwright_sync() as page:
+        # legacy "1"：dshell.ts 内存迁移为 on（皮肤生效），存储仍是 "1" → 横幅触发
+        boot(page, "1", theme, "/")
+        # 自包含：清掉 dismissed 再 reload，保证横幅必然出现（不依赖 context 新鲜度）
+        page.evaluate(
+            """() => { try { localStorage.removeItem("bb.dshell.migration.dismissed"); } catch {} }"""
+        )
+        page.reload(wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(1500)
+        page.evaluate(
+            """(t) => { const h = document.documentElement; h.classList.remove("dark","light"); h.classList.add(t); }""",
+            theme,
+        )
+        page.wait_for_timeout(900)
+
+        banner = page.locator('[data-testid="dshell-migration-banner"]')
+        if banner.count() == 0:
+            failures.append(f"{scene}/banner: 横幅未出现（legacy '1' 未触发迁移提示）")
+            return
+        rect = page.evaluate(
+            """() => {
+              const el = document.querySelector('[data-testid="dshell-migration-banner"]');
+              if (!el) return null;
+              const r = el.getBoundingClientRect();
+              return {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)};
+            }"""
+        )
+        if not rect:
+            failures.append(f"{scene}/banner: 横幅元素无几何")
+            return
+        shot = Path("/tmp") / f"{scene}__banner.png"
+        capture_region(page, str(shot), rect)
+        compare_region(scene, "banner", shot)
+
+        # 一次性语义：点 ✕ 关闭 → 横幅消失 + dismissed 落盘。
+        # 应用里固定 z-40 的「Show right panel」钮浮在横幅 ✕ 正上方（同一坐标），
+        # Playwright 的坐标点击（含 force=True，仍按命中测试派发）都会落到那个
+        # 钮上 → 用 DOM 级 .click() 直接触发横幅 ✕ 的 React onClick，确定性验证
+        # dismiss 处理链（写盘 + 卸载）。
+        page.evaluate(
+            """() => document.querySelector('button[aria-label="Dismiss DSH skin notice"]')?.click()"""
+        )
+        page.wait_for_timeout(500)
+        if banner.count() != 0:
+            failures.append(f"{scene}/dismiss: 关闭后横幅仍在")
+        dismissed = page.evaluate(
+            """() => { try { return localStorage.getItem("bb.dshell.migration.dismissed"); } catch { return null; } }"""
+        )
+        if dismissed != "1":
+            failures.append(f"{scene}/dismiss: dismissed={dismissed!r}（应为 '1'）")
+        log(f"  [OK] {scene}/dismiss: 横幅消失 + dismissed 落盘")
 
 
 def scene_settings(mode: str, theme: str) -> None:
@@ -982,6 +1053,9 @@ def main() -> int:
         # 传完整场景名：--scene rail_peek / --scene rail（前缀）都能精确命中对应状态
         if want(f"rail_{state}"):
             scene_rail(state)
+    for theme in ("dark", "light"):
+        if want(f"migration_banner_{theme}"):
+            scene_migration_banner(theme)
     if THREAD:
         if want("glass_dark_terminal"):
             scene_panel_glass("dark", THREAD)
