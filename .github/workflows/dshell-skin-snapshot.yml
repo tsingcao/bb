@@ -149,6 +149,29 @@ jobs:
             python3 scripts/dshell-skin-snapshot.py --check --ci
           fi
 
+      # 对比度审计（皮肤契约 §6 补缺）：同一 harness 实例 + playwright 安装，
+      # 跑 8 个确定性主表面场景（home×2 / settings×2 / rail 三态 / migration
+      # banner×2，见 scripts/dshell_contrast_audit.py SCENES）的 computed-style
+      # WCAG 断言。像素快照管「形状回归」，这里管「玻璃化后文字可读」——
+      # 弱化文本（secondary/muted）回归不再只靠肉眼。输出同时落盘供失败 artifact。
+      - name: Run dshell contrast audit (WCAG text readability)
+        id: contrast
+        env:
+          BB_URL: ${{ env.BB_URL }}
+        run: |
+          mkdir -p e2e-artifacts/contrast
+          python3 scripts/dshell_contrast_audit.py 2>&1 | tee e2e-artifacts/contrast/report.txt
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload contrast audit report (only on failure)
+        if: failure() && steps.contrast.outcome == 'failure'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: dshell-contrast-report-${{ github.run_id }}
+          path: e2e-artifacts/contrast/report.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload .diff report (only on check regression)
         # --check 失败（rc1）时脚本把 双图并排+差异热区 写入 auto/.diff/；上传供人工定位。
         # --update 模式不产生 .diff（if-no-files-found: ignore 兜底）。
