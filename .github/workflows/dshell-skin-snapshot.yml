@@ -59,6 +59,14 @@ jobs:
           pnpm-version: ${{ env.PNPM_VERSION }}
           cache-prefix: dshell-skin
 
+      # dshell 单元测试 gate：dshell lib（三态/迁移/性能护栏）+ 设置卡
+      # （DshellAppearanceSetting/DshellMigrationBanner）+ sidebar rail
+      # （sidebar/SidebarRailToggle/AppLayout rail）。与本地入口完全一致
+      # （apps/app 的 test:dshell:unit 别名，同 ci.yml @bb/app 分片覆盖的文件）。
+      # 跑在快照之前：单测红先于像素回归失败，便于定位。
+      - name: Run dshell unit tests (lib + settings + sidebar rail)
+        run: pnpm --filter=@bb/app run test:dshell:unit
+
       # 快照驱动的 app 由 e2e harness 以静态文件方式提供（BB_MOBILE_E2E_SERVE_APP=1
       # 读取 apps/app/dist），与 mobile-e2e 工作流同款：先 build，再起 harness。
       - name: Build the web app the snapshot drives

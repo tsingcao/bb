@@ -46,6 +46,8 @@ DSH-WORKTABLE 视觉语言在 bb 外壳上的落地，配套 `apps/app/src/compo
 pnpm test:dshell:snapshot                 # 或 python3 scripts/dshell-skin-snapshot.py --check
 # 皮肤有意改动后校准基线：
 pnpm test:dshell:snapshot:update          # python3 scripts/dshell-skin-snapshot.py --update
+# dshell 单元测试 gate（lib + 设置卡 + sidebar rail，本地与 CI 同一入口）：
+pnpm test:dshell:unit                    # vitest run --config vitest.config.ts <8 个套件>
 # 单场景：
 python3 scripts/dshell-skin-snapshot.py --check --scene rail_icon
 # CI 场景集（e2e harness 种子下可确定性验证的子集）：
