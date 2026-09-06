@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/settings-section";
 import { AppCommandShortcutPill } from "@/components/commands/AppCommandShortcutHint";
 import { getBbDesktopInfo } from "@/lib/bb-desktop";
+import { keyboardSettingsMessages } from "@/lib/keyboard-settings-messages";
 
 const EMPTY_KEYBINDINGS: AppDefaultKeybindings = [];
 const EMPTY_OVERRIDES: AppKeybindingOverrides = [];
@@ -106,7 +107,9 @@ const ShortcutRecorder = memo(
     const [error, setError] = useState<string | null>(null);
     const shortcutPresentation =
       shortcut === null ? null : presentShortcut(shortcut, platform);
-    const formattedShortcut = shortcutPresentation?.label ?? "unassigned";
+    const formattedShortcut =
+      shortcutPresentation?.label ??
+      keyboardSettingsMessages.unassignedShortcutFallback;
 
     function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
       if (!recording) return;
@@ -119,11 +122,11 @@ const ShortcutRecorder = memo(
       }
       const next = appShortcutFromInput(event, platform);
       if (next === null) {
-        setError("Press a non-modifier key.");
+        setError(keyboardSettingsMessages.errorNonModifierKey);
         return;
       }
       if (!canAssignAppShortcut(command, next)) {
-        setError("Use Command, Control, or Alt with a key.");
+        setError(keyboardSettingsMessages.errorRequireModifier);
         return;
       }
       setError(null);
@@ -136,8 +139,13 @@ const ShortcutRecorder = memo(
         <Button
           aria-label={
             recording
-              ? `Recording shortcut for ${getAppCommandMetadata(command).label}. Press keys or Escape to cancel.`
-              : `Record shortcut for ${getAppCommandMetadata(command).label}, current shortcut ${formattedShortcut}`
+              ? keyboardSettingsMessages.recordingAriaLabel(
+                  getAppCommandMetadata(command).label,
+                )
+              : keyboardSettingsMessages.recordAriaLabel(
+                  getAppCommandMetadata(command).label,
+                  formattedShortcut,
+                )
           }
           aria-pressed={recording}
           className={cn(
@@ -160,9 +168,9 @@ const ShortcutRecorder = memo(
           variant="outline"
         >
           {recording ? (
-            "Press keys"
+            keyboardSettingsMessages.recordingButtonLabel
           ) : shortcutPresentation === null ? (
-            "Unassigned"
+            keyboardSettingsMessages.unassignedButtonLabel
           ) : (
             <AppCommandShortcutPill
               className={SETTINGS_SHORTCUT_PILL_CLASS}
@@ -334,8 +342,14 @@ const KeyboardCommandRow = memo(
       desktopDefaultShortcut !== null &&
       !areAppShortcutsEqual(webDefaultShortcut, desktopDefaultShortcut)
         ? [
-            { label: "Web", shortcut: webDefaultShortcut },
-            { label: "Desktop", shortcut: desktopDefaultShortcut },
+            {
+              label: keyboardSettingsMessages.webBadge,
+              shortcut: webDefaultShortcut,
+            },
+            {
+              label: keyboardSettingsMessages.desktopBadge,
+              shortcut: desktopDefaultShortcut,
+            },
           ]
         : null;
     const sharedDefaultShortcut =
@@ -354,19 +368,28 @@ const KeyboardCommandRow = memo(
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <p className="text-sm text-foreground">{metadata.label}</p>
-            {desktopOnly ? <SettingsBadge>Desktop</SettingsBadge> : null}
-            {customized ? <SettingsBadge>Custom</SettingsBadge> : null}
+            {desktopOnly ? (
+              <SettingsBadge>{keyboardSettingsMessages.desktopBadge}</SettingsBadge>
+            ) : null}
+            {customized ? (
+              <SettingsBadge>{keyboardSettingsMessages.customBadge}</SettingsBadge>
+            ) : null}
           </div>
           <p className="mt-0.5 text-xs leading-snug text-subtle-foreground/75">
             {metadata.description}
           </p>
           {splitDefaults !== null || sharedDefaultShortcut !== null ? (
             <div
-              aria-label={`${splitDefaults === null ? "Default shortcut" : "Default shortcuts"} for ${metadata.label}`}
+              aria-label={keyboardSettingsMessages.defaultShortcutAriaLabel(
+                metadata.label,
+                splitDefaults !== null,
+              )}
               className="mt-1.5 flex flex-wrap items-center gap-1.5"
             >
               <span className="text-xs text-subtle-foreground/75">
-                {splitDefaults === null ? "Default:" : "Defaults:"}
+                {splitDefaults === null
+                  ? keyboardSettingsMessages.defaultShortcutSingular
+                  : keyboardSettingsMessages.defaultShortcutPlural}
               </span>
               {sharedDefaultShortcut !== null ? (
                 <AppCommandShortcutPill
@@ -395,11 +418,11 @@ const KeyboardCommandRow = memo(
           ) : null}
           {conflicts.length > 0 ? (
             <p className="mt-1 text-xs text-warning-text">
-              Also used by{" "}
-              {conflicts
-                .map((candidate) => getAppCommandMetadata(candidate).label)
-                .join(", ")}
-              . Context determines which command runs.
+              {keyboardSettingsMessages.conflictMessage(
+                conflicts
+                  .map((candidate) => getAppCommandMetadata(candidate).label)
+                  .join(", "),
+              )}
             </p>
           ) : null}
         </div>
@@ -413,7 +436,9 @@ const KeyboardCommandRow = memo(
             shortcut={shortcut}
           />
           <Button
-            aria-label={`Clear shortcut for ${metadata.label}`}
+            aria-label={keyboardSettingsMessages.clearShortcutAriaLabel(
+              metadata.label,
+            )}
             className="size-7"
             disabled={!availableOnClient || shortcut === null}
             onClick={() => onChange(command, null)}
@@ -424,7 +449,9 @@ const KeyboardCommandRow = memo(
             <Icon name="X" className="size-3.5" />
           </Button>
           <Button
-            aria-label={`Reset shortcut for ${metadata.label}`}
+            aria-label={keyboardSettingsMessages.resetShortcutAriaLabel(
+              metadata.label,
+            )}
             className="size-7"
             disabled={!availableOnClient || !customized}
             onClick={() => onReset(command)}
@@ -598,19 +625,19 @@ export function KeyboardSettingsSection() {
           type="button"
           variant="outline"
         >
-          Reset all
+          {keyboardSettingsMessages.resetAllLabel}
         </Button>
       }
-      description="Click a shortcut, then press its new keys. Changes sync to every bb window."
-      title="Keyboard shortcuts"
+      description={keyboardSettingsMessages.sectionDescription}
+      title={keyboardSettingsMessages.sectionTitle}
     >
       <div className="space-y-5">
         <SettingsWithControl
-          description="Show shortcut badges after holding Command or Control."
-          label="Show keyboard hints when holding CMD / Control"
+          description={keyboardSettingsMessages.showHintsDescription}
+          label={keyboardSettingsMessages.showHintsLabel}
         >
           <Switch
-            aria-label="Show keyboard hints when holding CMD / Control"
+            aria-label={keyboardSettingsMessages.showHintsLabel}
             checked={generalSettings.showKeyboardHints}
             disabled={
               systemConfig.data === undefined || updateGeneralSettings.isPending
@@ -624,9 +651,9 @@ export function KeyboardSettingsSection() {
           />
         </SettingsWithControl>
         <Input
-          aria-label="Search keyboard shortcuts"
+          aria-label={keyboardSettingsMessages.searchAriaLabel}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search shortcuts"
+          placeholder={keyboardSettingsMessages.searchPlaceholder}
           value={search}
         />
         {}
@@ -665,7 +692,7 @@ export function KeyboardSettingsSection() {
           ))}
           {visibleGroups.length === 0 ? (
             <p className="py-6 text-center text-sm text-subtle-foreground">
-              No shortcuts match “{search}”.
+              {keyboardSettingsMessages.noMatchesMessage(search)}
             </p>
           ) : null}
         </fieldset>
