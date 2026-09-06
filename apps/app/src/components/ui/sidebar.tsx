@@ -756,6 +756,26 @@ const Sidebar = React.forwardRef<
       }, 350);
     }, []);
     React.useEffect(() => clearRailPeekTimer, [clearRailPeekTimer]);
+    const railPanelRef = React.useRef<HTMLDivElement | null>(null);
+    // 浮层悬停期间的点击契约：点浮层内行 → 正常导航、peek 保持；点浮层外
+    // （内容区）→ 立即收起，不等 350ms 防抖，避免浮层盖住内容区挡操作。
+    React.useEffect(() => {
+      if (!railActive || !railPeek) return;
+      const handleRailPeekPointerDown = (event: PointerEvent) => {
+        const target = event.target;
+        if (target instanceof Node && railPanelRef.current?.contains(target)) {
+          return;
+        }
+        if (railPeekTimerRef.current !== null) {
+          window.clearTimeout(railPeekTimerRef.current);
+          railPeekTimerRef.current = null;
+        }
+        setRailPeek(false);
+      };
+      document.addEventListener("pointerdown", handleRailPeekPointerDown);
+      return () =>
+        document.removeEventListener("pointerdown", handleRailPeekPointerDown);
+    }, [railActive, railPeek]);
 
     const handleOpenMobileChange = React.useCallback(
       (nextOpen: boolean) => {
@@ -837,6 +857,7 @@ const Sidebar = React.forwardRef<
           )}
         />
         <div
+          ref={railPanelRef}
           data-sidebar="panel"
           className={cn(
             "fixed inset-y-0 z-10 flex h-(--bb-shell-height) w-(--sidebar-width) select-none flex-col bg-sidebar text-sidebar-foreground [transition:left_200ms_linear,right_200ms_linear,width_200ms_linear,visibility_0s_linear_0s]",

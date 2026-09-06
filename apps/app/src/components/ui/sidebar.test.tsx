@@ -7,7 +7,7 @@ import {
   render,
   screen,
 } from "@testing-library/react";
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -865,16 +865,18 @@ describe("sidebar icon rail", () => {
     rail,
     onRailChange,
     iconRail = true,
+    children = "Sidebar content",
   }: {
     rail?: boolean;
     onRailChange?: (rail: boolean) => void;
     iconRail?: boolean;
+    children?: ReactNode;
   } = {}) {
     render(
       <CompactViewportOverrideProvider isCompactViewport={false}>
         <SidebarProvider rail={rail} onRailChange={onRailChange}>
           <RailControls />
-          <Sidebar iconRail={iconRail}>Sidebar content</Sidebar>
+          <Sidebar iconRail={iconRail}>{children}</Sidebar>
         </SidebarProvider>
       </CompactViewportOverrideProvider>,
     );
@@ -1028,5 +1030,71 @@ describe("sidebar icon rail", () => {
       vi.advanceTimersByTime(350);
     });
     expect(panel.getAttribute("data-collapsible")).toBe("icon");
+  });
+
+  it("peek 期间点击浮层内行：正常触发导航且 rail 保持 icon", () => {
+    vi.useFakeTimers();
+    const onNavigate = vi.fn();
+    const panel = renderRailHarness({
+      rail: true,
+      children: (
+        <button type="button" onClick={onNavigate}>
+          Open thread
+        </button>
+      ),
+    });
+
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+    fireEvent.mouseEnter(panel);
+    expect(panel.getAttribute("data-rail-peek")).toBe("true");
+
+    // 浮层内点击：行 onClick 正常触发，且不把 peek 收起（鼠标仍在浮层上）
+    fireEvent.click(screen.getByRole("button", { name: "Open thread" }));
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+    expect(panel.getAttribute("data-rail-peek")).toBe("true");
+    expect(panel.getAttribute("data-collapsible")).toBe("");
+
+    // 移出浮层：350ms 后收回 icon —— rail 保持 icon，不粘在展开态
+    fireEvent.mouseLeave(panel);
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+    expect(panel.getAttribute("data-rail-peek")).toBeNull();
+    expect(screen.getByTestId("rail-state").textContent).toBe("true");
+  });
+
+  it("peek 期间点击浮层外内容区：立即收起，不等 350ms 防抖", () => {
+    vi.useFakeTimers();
+    const panel = renderRailHarness({ rail: true });
+
+    fireEvent.mouseEnter(panel);
+    expect(panel.getAttribute("data-rail-peek")).toBe("true");
+
+    // 点内容区（panel 之外）→ 立即收回 icon，无需推进 350ms 定时器
+    fireEvent.pointerDown(document.body);
+    expect(panel.getAttribute("data-rail-peek")).toBeNull();
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+
+    // 定时器被清掉：继续推进也不会有二次状态翻转
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(panel.getAttribute("data-collapsible")).toBe("icon");
+  });
+
+  it("peek 期间点击浮层内不收起：pointerdown 落在面板内被忽略", () => {
+    vi.useFakeTimers();
+    const panel = renderRailHarness({
+      rail: true,
+      children: <button type="button">Inside row</button>,
+    });
+
+    fireEvent.mouseEnter(panel);
+    expect(panel.getAttribute("data-rail-peek")).toBe("true");
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Inside row" }));
+    expect(panel.getAttribute("data-rail-peek")).toBe("true");
+    expect(panel.getAttribute("data-collapsible")).toBe("");
   });
 });
