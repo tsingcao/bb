@@ -31,6 +31,7 @@ import { setPluginThreadEventEmitter } from "./services/plugins/plugin-thread-ev
 import { setPluginHookProvider } from "./services/plugins/plugin-hook-registry.js";
 import { requestQueuedMessageDispatch } from "./services/threads/queued-message-dispatch.js";
 import { registerInternalEventRoutes } from "./internal/events.js";
+
 import { registerInternalHostRoutes } from "./internal/hosts.js";
 import { registerInternalInteractiveRequestRoutes } from "./internal/interactive-requests.js";
 import { registerInternalPluginHostArtifactRoutes } from "./internal/plugin-host-artifacts.js";
@@ -636,7 +637,13 @@ export function createApp(
   registerPluginCatalogRoutes(publicApi, pluginCatalogService);
   registerPluginRoutes(publicApi, deps, pluginService);
   registerSkillsRegistryRoutes(publicApi, deps);
-  app.route("/api/v1", publicApi);
+    app.route("/api/v1", publicApi);
+    // MCP JSON‑RPC endpoint for external clients (e.g., Claude Desktop, Cursor)
+    app.post("/mcp", async (c) => {
+      // @ts-ignore: dynamic import of MCP handler
+      const { handleMcpRequest } = await import("../../packages/bb-app/src/mcp.ts");
+      return await handleMcpRequest(c.req.raw);
+    });
   app.use("/api/v1/*", () => {
     throw new ApiError(404, "not_found", "Not found");
   });
