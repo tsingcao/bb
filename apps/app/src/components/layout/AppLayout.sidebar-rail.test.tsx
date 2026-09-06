@@ -6,6 +6,9 @@
 //   - 重新挂载（模拟 reload）后从存储恢复 rail 态
 //   - 启用 rail 时强制展开侧栏（forced-open-on-rail）：handleRailChange(true)
 //     先 handleOpenChange(true) 再 setRail(true)，不允许「rail 开 + 侧栏关」并存
+//   - 规则是**单向**的：rail 开着时关闭侧栏（sidebar.toggle / ⌘\）不解除 rail——
+//     open=false 时整个侧栏区 offcanvas（icon rail 也不残留半态），rail 作为持久化
+//     偏好保留，下次重开仍回 icon rail 形态（见「closing while the rail is on」测试）
 
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -261,6 +264,12 @@ describe("AppLayout sidebar rail persistence", () => {
     return handler;
   }
 
+  function sidebarToggleHandler(): () => boolean {
+    const handler = commandMocks.handlers.get("sidebar.toggle");
+    if (!handler) throw new Error("sidebar.toggle handler not registered");
+    return handler;
+  }
+
   it("railToggle command collapses to the icon rail, returns true, and persists", () => {
     renderLayout();
     expect(railOn(getPanel())).toBe(false);
@@ -337,6 +346,36 @@ describe("AppLayout sidebar rail persistence", () => {
 
     expect(railOn(getPanel())).toBe(true);
     expect(openState(getPanel())).toBe("expanded");
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
+  });
+
+  it("closing the sidebar while the rail is on is allowed — rail persists and reopening returns to the icon rail", () => {
+    // 逆向场景：rail 开（icon rail 形态）时用户点关闭钮 / ⌘\ —— 允许整体 offcanvas，
+    // 不补「open=false → 解除 rail」规则：rail 是持久化偏好，关闭只藏整个侧栏区，
+    // 重开仍回 icon rail（单向不变式：仅「启用 rail → 强制展开」一侧受约束）。
+    window.localStorage.setItem(SIDEBAR_RAIL_STORAGE_KEY, "true");
+    renderLayout();
+    expect(railOn(getPanel())).toBe(true);
+    expect(openState(getPanel())).toBe("expanded");
+
+    // 关闭（与侧栏关闭钮同一条 handleOpenChange(false) 路径）
+    let cmdReturn: boolean | undefined;
+    act(() => {
+      cmdReturn = sidebarToggleHandler()();
+    });
+    expect(cmdReturn).toBe(true);
+    expect(openState(getPanel())).toBe("collapsed");
+    // 关闭后整个侧栏区 offcanvas：icon 形态不残留半态，rail 偏好仍持久化
+    expect(getPanel().getAttribute("data-collapsible")).toBe("offcanvas");
+    expect(window.localStorage.getItem(SIDEBAR_RAIL_STORAGE_KEY)).toBe("true");
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("false");
+
+    // 重新打开 → 回到 icon rail（不是直接 full 侧栏）
+    act(() => {
+      cmdReturn = sidebarToggleHandler()();
+    });
+    expect(openState(getPanel())).toBe("expanded");
+    expect(railOn(getPanel())).toBe(true);
     expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
   });
 });
