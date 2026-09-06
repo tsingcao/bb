@@ -2,7 +2,7 @@
 """dshell 皮肤层 headless Playwright 快照回归测试。
 
 用法:
-  python3 scripts/dshell-skin-snapshot.py [--check|--update] [--scene NAME] [--url http://127.0.0.1:18154]
+  python3 scripts/dshell-skin-snapshot.py [--check|--update] [--gallery] [--scene NAME] [--url http://127.0.0.1:18154]
 
 - 默认 --check：把当前渲染与 docs/dshell-skin-shots/auto/ 基线比对（区域像素 diff +
   终端画布颜色断言），回归时输出 .diff 报告并返回非 0。
@@ -20,6 +20,11 @@
 - migration_banner_dark/light：一次性迁移横幅场景——seed legacy "1" + 清 dismissed，
   横幅条区域入基线，点 ✕ 后断言横幅消失且 bb.dshell.migration.dismissed="1"
   （一次性语义的确定性断言，不依赖像素）。
+- gallery 归档：--update 校准基线时，逐 tab（info/diff/terminal/sidechat × dark/light）
+  同步把**全视口 1920×1000 PNG + 1.5× 面板放大**写进 docs/dshell-skin-shots/（人类可审
+  gallery，与 auto/ 机器基线分开）；--gallery 单独重拍 gallery + audit.json、不动基线。
+  每次归档同时把结构化审计汇总到 docs/dshell-skin-shots/audit.json（玻璃 alpha / 亮色
+  逐文本对比 / 面板像素明暗占比 / console 错误）——一条命令替代 ad-hoc 审计脚本。
 - glass_anim ⌘J 折叠/展开 + 分栏拖拽帧采样场景（无像素基线）：动画期间每个 rAF 帧
   采样面板根 [data-panel-id=thread-detail-secondary-panel] 的计算样式，断言
   (a) backdrop-filter 自始至终含 blur（拖拽中被性能护栏降到 6px 也算持有），
@@ -99,7 +104,12 @@ CI_SCENES = (
     "final_dark_home", "final_light_home", "dshell_settings", "rail",
     "migration_banner",
     "glass_tab_info", "glass_dark_terminal", "glass_light_terminal", "glass_anim",
+    "app_terminal_dark", "app_terminal_light",
 )
+
+# app_terminal_*（§12b 非面板宿主）需要：真实线程（种 split 上下文 → ⌘⇧Enter 落在
+# -pane-2 而非 §11 玻璃面板）+ host daemon（PTY）。CI harness 的固定种子线程 + 真实
+# host daemon 满足；无线程时脚本内自动 skip。
 
 # 皮肤自身的稳定表面（人工 gallery 的同名场景），见 docs/dshell-skin-shots/README.md
 GALLERY_SCENES = [
@@ -112,6 +122,7 @@ GALLERY_SCENES = [
     "glass_tab_info", "glass_tab_diff", "glass_tab_terminal", "glass_tab_sidechat",
     "glass_tab_info_light", "glass_tab_diff_light", "glass_tab_sidechat_light",
     "term_canvas_dark", "term_canvas_light", "term_canvas_off",
+    "app_terminal_dark", "app_terminal_light",
 ]
 
 MAX_DIFF_PCT = 0.5   # 差异像素(>12/255)占比上限 %
@@ -124,6 +135,10 @@ failures: list[str] = []
 skips: list[str] = []
 missing_baselines: list[str] = []
 UPDATE_MODE = False
+GALLERY_MODE = False
+AUDIT: dict = {}          # scene → {theme, chromeBg, contentBg, contrast, pixels, …}，写 audit.json
+CONSOLE_ERRORS: list[str] = []
+CONSOLE_NOISE = ("css", "plugin", "jotai", "loadable", "deprecat")
 
 
 def log(msg: str) -> None:
@@ -248,6 +263,55 @@ def check_skin_identity(page, theme: str, scene: str) -> None:
         failures.append(f"{scene}: --dsh-term-bg 未解析")
         ok = False
     log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/identity  dshell={info['dshell']} panelBlur={info['panelBlur']} dur={info['panelDur']}")
+
+
+def gallery_capture(page, gallery_name: str, panel_rect: dict | None = None) -> None:
+    """--update/--gallery 时把当前渲染写为人类可审 gallery PNG（全视口 + 1.5× 面板放大）。
+
+    同时把全图/面板区的像素明暗占比记入 AUDIT（audit.json 结构化报告），替代早前
+    /tmp 里的 ad-hoc 审计脚本（bb_final_audit2.py 等）。
+    """
+    if not (UPDATE_MODE or GALLERY_MODE):
+        return
+    GALLERY_DIR.mkdir(parents=True, exist_ok=True)
+    full = GALLERY_DIR / f"{gallery_name}.png"
+    page.screenshot(path=str(full))
+    log(f"  [GALLERY] {gallery_name}.png")
+    with Image.open(full) as img:
+        rect = panel_rect or {"x": 0, "y": 0, "w": img.width, "h": img.height}
+        x = max(rect["x"], 0)
+        y = max(rect["y"], 0)
+        w = min(rect["w"], img.width - x)
+        h = min(rect["h"], img.height - y)
+        if w > 60 and h > 60:
+            img.crop((x, y, x + w, y + h)).resize(
+                (int(w * 1.5), int(h * 1.5)), Image.LANCZOS
+            ).save(GALLERY_DIR / f"{gallery_name}_zoom.png")
+            log(f"  [GALLERY] {gallery_name}_zoom.png ({w}×{h} → 1.5×)")
+        gray = img.convert("L")
+        px = list(gray.getdata())
+        n = max(len(px), 1)
+        entry = AUDIT.setdefault(gallery_name, {})
+        entry["pixels"] = {
+            "n": len(px),
+            "darkPct": round(100 * sum(1 for v in px if v < 60) / n, 1),
+            "lightPct": round(100 * sum(1 for v in px if v > 200) / n, 1),
+        }
+
+
+def record_audit(scene: str, theme: str, st: dict | None) -> None:
+    """把场景的玻璃状态记入 AUDIT（audit.json 结构化报告）。"""
+    if not st:
+        return
+    entry = AUDIT.setdefault(scene, {})
+    entry.update(
+        theme=theme,
+        chromeBg=st.get("chromeBg"),
+        contentBg=st.get("contentBg"),
+        contrast=st.get("contrast"),
+        hasChat=st.get("hasChat"),
+        txt=(st.get("txt") or "")[:120],
+    )
 
 
 def dominant_color(page, selector: str) -> tuple | None:
@@ -532,9 +596,152 @@ def scene_panel_glass(theme: str, thread: str) -> None:
             failures.append(f"{scene}/canvas: 画布底色 {dom} ≠ 预期 {expected}（主题回归？）")
         else:
             log(f"  [PASS] {scene}/canvas  dominant={dom}")
+        # gallery 归档（终端 tab 家族：glass_tab_terminal{,_light}）+ audit 记录。
+        # 放 close_terminal 之前：终端必须在面板里，全视口 PNG 才展示终端窗。
+        gname = "glass_tab_terminal" if theme == "dark" else "glass_tab_terminal_light"
+        gallery_capture(page, gname, root_rect)
+        record_audit(gname, theme, glass_state(page))
         # 收尾：关掉本场景开的终端会话。终端会话挂在线程上跨页面持久，若不清理，
         # 后续场景（glass_tab_*）在同一线程上会看到残留的 shell tab，污染 tab 行基线。
         close_terminal(page)
+
+
+# ---------- split-pane 二级面板宿主（§11+§12b 一致性，玻璃链补齐验证）------------
+# 设计：SecondaryPanelLayout 在分栏/多栏布局下发 data-panel-id=
+# thread-detail-secondary-panel-${paneId}（如 -pane-2），与主面板是同一组件实例族。
+# §11/§13 玻璃链原本只精确匹配 thread-detail-secondary-panel → split pane 漏皮肤；
+# 现改前缀匹配 ^= 后，split pane 与主面板吃同一套玻璃。本场景在 root compose 面
+# （route "/" + ⌘⇧Enter）开 split-pane 终端，断言补漏后的统一效果：
+#   1) split-pane 宿主（data-app-terminal 生效，且非主面板实例）
+#   2) §11 玻璃在场（宿主根 backdrop-filter blur）——漏皮肤已补齐
+#   3) 青色发丝描边（border-radius 10px + inset 1px box-shadow，§12b）
+#   4) letterbox 被 §11 覆盖为透明（与主面板一致；纯 §12b letterbox 场景见抽屉）
+#   5) 画布底色 == 蓝黑终端井
+# 像素基线：终端左缘 24px 竖列（发丝 + 画布边距，纯皮肤面，不含 shell 标题/prompt），
+# 内容变化不影响该列 → CI 种子下确定性成立。需 BB_E2E_THREAD 种入 split 上下文。
+APP_TERMINAL_STATE_JS = r"""() => {
+  const x = [...document.querySelectorAll('.terminal.xterm')].find(e => {
+    const r = e.getBoundingClientRect();
+    return r.width > 150 && r.height > 150 && !e.closest('[data-panel-id="thread-detail-secondary-panel"]');
+  });
+  if (!x) return null;
+  const vp = x.querySelector('.xterm-viewport');
+  const cs = getComputedStyle(x);
+  const vcs = vp ? getComputedStyle(vp) : null;
+  const htmlCs = getComputedStyle(document.documentElement);
+  const varBg = htmlCs.getPropertyValue('--dsh-term-bg').trim();
+  const cvs = document.createElement('canvas'); cvs.width = cvs.height = 1;
+  const ctx = cvs.getContext('2d', { willReadFrequently: true });
+  const sample = (color) => { try { ctx.clearRect(0,0,1,1); ctx.fillStyle = color; ctx.fillRect(0,0,1,1);
+    const d = ctx.getImageData(0,0,1,1).data; return [d[0], d[1], d[2]]; } catch { return null; } };
+  const r = x.getBoundingClientRect();
+  return {
+    rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+    dshell: document.documentElement.classList.contains('dshell'),
+    hasDataAppTerminal: !!x.closest('[data-app-terminal]'),
+    inPanel: !!x.closest('[data-panel-id="thread-detail-secondary-panel"]'),
+    hostPanelId: (x.closest('[data-panel-id^="thread-detail-secondary-panel"]') || {}).getAttribute ?
+      x.closest('[data-panel-id^="thread-detail-secondary-panel"]').getAttribute('data-panel-id') : null,
+    hostBackdrop: (() => { const h = x.closest('[data-panel-id^="thread-detail-secondary-panel"]');
+      return h ? getComputedStyle(h).backdropFilter : null; })(),
+    borderRadius: cs.borderRadius,
+    boxShadow: cs.boxShadow,
+    viewportBg: vcs ? vcs.backgroundColor : null,
+    dshTermBgVar: varBg,
+    viewportBgRgb: vcs ? sample(vcs.backgroundColor) : null,
+    dshTermBgRgb: varBg ? sample(varBg) : null,
+  };
+}"""
+
+
+def open_compose_terminal(page) -> bool:
+    """在 root compose 面（route "/"）按 terminal.open（⌘⇧Enter）开非面板终端。"""
+    for _ in range(10):
+        has = page.evaluate(
+            """() => !![...document.querySelectorAll('.terminal.xterm')].find(e => {
+              const r = e.getBoundingClientRect();
+              return r.width > 150 && r.height > 150 && !e.closest('[data-panel-id="thread-detail-secondary-panel"]');
+            })"""
+        )
+        if has:
+            return True
+        page.keyboard.press("Meta+Shift+Enter")
+        page.wait_for_timeout(1800)
+    return False
+
+
+def scene_app_terminal(theme: str) -> None:
+    """§12b 通用终端宿主（非面板）验证：在非面板容器断言青色发丝描边 + letterbox
+    底色 == --dsh-term-bg，并做左缘像素基线。需要一个真实线程种入 split 上下文，
+    否则 ⌘⇧Enter 落在 §11 玻璃面板（thread-detail-secondary-panel）而非 -pane-2。"""
+    scene = f"app_terminal_{theme}"
+    if not THREAD:
+        skips.append(f"{scene}: 需 BB_E2E_THREAD 种入 split 上下文，跳过")
+        return
+    from playwright.sync_api import sync_playwright as _sync_pw
+
+    with _sync_pw() as pw:
+        browser = pw.chromium.launch()
+        ctx = browser.new_context(viewport={"width": 1920, "height": 1000})
+        # 页面 A：访问线程，种入 split 上下文（同 context 才共享 localStorage 与布局原子）
+        seed = ctx.new_page()
+        boot(seed, "on", theme, THREAD)
+        seed.wait_for_timeout(600)
+        seed.close()
+        # 页面 B：compose 面 + ⌘⇧Enter → 非面板终端（-pane-2，backdrop none）
+        page = ctx.new_page()
+        boot(page, "on", theme, "/")
+        if not open_compose_terminal(page):
+            skips.append(f"{scene}: 非面板终端未能打开（compose 面 / ⌘⇧Enter 不可用），跳过")
+            ctx.close()
+            browser.close()
+            return
+        st = page.evaluate(APP_TERMINAL_STATE_JS)
+        if st is None:
+            failures.append(f"{scene}: 终端状态不可读")
+            return
+        rect = st["rect"]
+        # 1) split-pane 宿主（非主面板实例）+ dshell 生效
+        ok = st["dshell"] and st["hasDataAppTerminal"] and not st["inPanel"] and st["hostPanelId"]
+        if not ok:
+            failures.append(f"{scene}/host: dshell={st['dshell']} dataAppTerminal={st['hasDataAppTerminal']} inPanel={st['inPanel']} hostPanelId={st['hostPanelId']}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/host  panelId={st['hostPanelId']} inPanel={st['inPanel']}")
+        # 2) §11 玻璃在场（漏皮肤补齐：split pane 宿主根 backdrop blur）
+        bf = st.get("hostBackdrop") or ""
+        ok = "blur(" in bf
+        if not ok:
+            failures.append(f"{scene}/glass: split-pane 宿主缺 §11 玻璃 backdrop={bf!r}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/glass  backdrop={bf}")
+        # 3) 青色发丝描边（§12b）
+        ok = st["borderRadius"] == "10px" and st["boxShadow"] not in (None, "none") and "inset" in st["boxShadow"] and "1px" in st["boxShadow"]
+        if not ok:
+            failures.append(f"{scene}/hairline: borderRadius={st['borderRadius']} boxShadow={st['boxShadow']}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/hairline  radius={st['borderRadius']} shadow={st['boxShadow']}")
+        # 4) letterbox 被 §11 覆盖为透明（与主面板一致；纯 §12b letterbox=var 见抽屉场景）
+        vb = st.get("viewportBg") or ""
+        ok = "rgba(0, 0, 0, 0)" in vb or vb == "transparent"
+        if not ok:
+            failures.append(f"{scene}/letterbox: split-pane viewportBg={vb!r} 应为透明（§11 覆盖）")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/letterbox  viewportBg={vb}")
+        # 5) 画布底色 == 蓝黑终端井（与面板宿主同源，§12 令牌）
+        dom = dominant_color(page, ".terminal.xterm")
+        expected = (8, 11, 18) if theme == "dark" else (9, 13, 20)
+        if dom is None:
+            failures.append(f"{scene}/canvas: 终端画布不可见")
+        elif not all(abs(c - e) <= 7 for c, e in zip(dom, expected)):
+            failures.append(f"{scene}/canvas: 画布底色 {dom} ≠ 预期 {expected}（主题回归？）")
+        else:
+            log(f"  [PASS] {scene}/canvas  dominant={dom}")
+        # 6) 像素基线：左缘 24px 竖列（发丝 + 画布边距，确定性区域）
+        if rect["w"] >= 60:
+            edge = {"x": rect["x"], "y": rect["y"], "w": 24, "h": rect["h"]}
+            shot = Path("/tmp") / f"{scene}__edge.png"
+            capture_region(page, str(shot), edge)
+            compare_region(scene, "edge", shot)
+        # gallery 归档（split-pane 宿主全视口 + 1.5× 终端放大）
+        gallery_capture(page, scene, rect)
+        ctx.close()
+        browser.close()
 
 
 def open_terminal(page) -> bool:
@@ -779,6 +986,9 @@ def scene_glass_tab(tab: str, theme: str) -> None:
             if not ok:
                 failures.append(f"{scene}/has-chat: hasChat={(st or {}).get('hasChat')}")
             log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/has-chat")
+        # gallery 归档（全视口 + 1.5× 面板放大）+ audit 记录，此时页面停在目标 tab 状态
+        gallery_capture(page, scene, rect)
+        record_audit(scene, theme, st or glass_state(page))
 
 
 # ---------- glass_anim：⌘J 折叠/展开 + 分栏拖拽 帧采样回归（无像素基线） ----------
@@ -996,6 +1206,13 @@ class PlaywrightSession:
         self._browser = self._pw.chromium.launch()
         self.page = self._browser.new_page(viewport={"width": 1920, "height": 1000})
         self.page.set_default_timeout(30000)
+        # console 错误收集（噪声过滤），汇总进 audit.json——与 ad-hoc 审计脚本同款过滤
+        self.page.on(
+            "console",
+            lambda m: CONSOLE_ERRORS.append(m.text)
+            if m.type == "error" and not any(n in (m.text or "").lower() for n in CONSOLE_NOISE)
+            else None,
+        )
 
     def __enter__(self):
         return self.page
@@ -1014,12 +1231,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--update", action="store_true", help="把当前渲染写为新基线")
     parser.add_argument("--check", action="store_true", help="(默认) 校验模式：与基线比对并报告回归")
+    parser.add_argument("--gallery", action="store_true", help="重拍 docs/dshell-skin-shots 的 gallery PNG + audit.json（不动 auto 基线）")
     parser.add_argument("--ci", action="store_true", help="只跑 CI 场景集（harness 种子下确定性可验证的场景）")
     parser.add_argument("--scene", default=None, help="只跑指定场景前缀")
     parser.add_argument("--url", default=BASE)
     args = parser.parse_args()
-    global UPDATE_MODE
+    global UPDATE_MODE, GALLERY_MODE
     UPDATE_MODE = args.update
+    GALLERY_MODE = args.gallery
     BASE = args.url
 
     AUTO_DIR.mkdir(parents=True, exist_ok=True)
@@ -1034,7 +1253,8 @@ def main() -> int:
             return any(scene.startswith(ci) for ci in CI_SCENES)
         return args.scene is None or scene.startswith(args.scene)
 
-    log(f"dshell 皮肤快照回归  url={BASE}  mode={'--update' if args.update else '--check'}")
+    log(f"dshell 皮肤快照回归  url={BASE}  mode={'--update' if args.update else '--check'}"
+        + (" + --gallery" if args.gallery else ""))
     if args.ci:
         log(f"CI 场景集：{', '.join(CI_SCENES)}（diff/sidechat 需真实线程内容，CI 跳过）")
     if THREAD:
@@ -1071,6 +1291,10 @@ def main() -> int:
         ]:
             if want(name):
                 scene_glass_tab(tab, theme)
+        # §12b 通用终端宿主（非面板，route "/"；需线程种 split 上下文 → 放在 THREAD 内）
+        for theme in ("dark", "light"):
+            if want(f"app_terminal_{theme}"):
+                scene_app_terminal(theme)
     if want("glass_anim"):
         if THREAD:
             scene_glass_anim()
@@ -1087,6 +1311,17 @@ def main() -> int:
         log(f"  skip {s}")
     for f in failures:
         log(f"  FAIL {f}")
+    # gallery/audit 归档（--update 或 --gallery）：16 张逐 tab PNG + audit.json。
+    # audit.json 只在全量运行时写：单场景重拍（--scene）不覆盖完整审计，避免丢失
+    # 其余场景的对比数据（PNG 仍照常重拍）。
+    if (UPDATE_MODE or GALLERY_MODE) and args.scene is None:
+        audit_path = GALLERY_DIR / "audit.json"
+        audit_path.write_text(json.dumps(AUDIT, ensure_ascii=False, indent=1))
+        log(f"audit 已写入 {audit_path.relative_to(REPO_ROOT)}（{len(AUDIT)} 个场景）")
+    if CONSOLE_ERRORS:
+        log(f"console 错误 {len(CONSOLE_ERRORS)} 条（噪声已过滤）：")
+        for e in CONSOLE_ERRORS[:5]:
+            log(f"  • {e[:160]}")
     if not args.update:
         for f in missing_baselines:
             log(f"  MISSING {f}")
