@@ -32,9 +32,28 @@ opt-in 三态（Original/Auto/Always）落地前，旧版本用布尔值 `bb.dsh
   键）后整页 reload，横幅即出现在首页顶栏。
 
 ## 复现（如需重拍）
-1. 本地起 bb dev server：`cd bb-fork && pnpm --filter @bb/app dev`（http://127.0.0.1:18154）。
-2. headless Playwright（chromium, 1440×900）逐路由截图；皮肤偏好默认 ON
-   （`localStorage["bb.dshell.enabled"]`），关闭即得原版外观对照。
+
+**一条命令**在本地 dev server（http://127.0.0.1:18154）上重拍**全部**逐 tab 审计产物：
+
+    cd bb-fork && pnpm --filter @bb/app dev                       # 起 dev server
+    BB_E2E_THREAD=/projects/proj_xxx/threads/thr_xxx \
+      pnpm test:dshell:snapshot:update                            # 校准 auto 基线 + 重拍 gallery + audit.json
+    BB_E2E_THREAD=/projects/proj_xxx/threads/thr_xxx \
+      pnpm test:dshell:snapshot:gallery                           # 只重拍 gallery PNG + audit.json（不动基线）
+
+`scripts/dshell-skin-snapshot.py` 的逐 tab 场景（info/diff/terminal/sidechat ×
+dark/light）输出 16 张：全视口 1920×1000 全景 + 1.5× 面板放大，写入本目录；亮色
+变体逐文本 WCAG 对比（canvas 祖先链合成取样）与明暗像素占比、玻璃 alpha、console
+错误一起汇总到 `docs/dshell-skin-shots/audit.json`。线程相关场景需要真实线程
+（`BB_E2E_THREAD`）；`--scene glass_tab_info --gallery` 可只重拍单个场景。
+
+**玻璃 chrome 门**（逐 tab 审计，CI 同款入口）在真实线程下跑：
+
+    BB_E2E_THREAD=/projects/<proj>/threads/<thr> \
+      pnpm test:dshell:snapshot --scene glass_tab_
+
+注意：pnpm 9 会把 `--` 分隔符原样透传给脚本（argparse 报 `unrecognized arguments`），
+参数直接跟在脚本名后即可，不要写 `pnpm test:dshell:snapshot -- --scene ...`。
 
 ## 变更文件（同一提交）
 - 皮肤：`apps/app/src/components/ui/dshell/dshell.css`

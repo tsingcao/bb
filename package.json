@@ -50,7 +50,8 @@
     "drizzle-studio": "cross-env NODE_ENV=development pnpm --filter @bb/db db:studio",
     "drizzle-studio:prod": "cross-env NODE_ENV=production pnpm --filter @bb/db db:studio",
     "test:dshell:snapshot": "python3 scripts/dshell-skin-snapshot.py --check",
-    "test:dshell:snapshot:update": "python3 scripts/dshell-skin-snapshot.py --update"
+    "test:dshell:snapshot:update": "python3 scripts/dshell-skin-snapshot.py --update",
+    "test:dshell:snapshot:gallery": "python3 scripts/dshell-skin-snapshot.py --gallery"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.1",
