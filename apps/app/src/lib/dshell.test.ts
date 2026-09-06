@@ -7,7 +7,8 @@
 //      同档 no-op 与非法档位拒绝写盘；
 //   4. 档位解析——存储的 on/off/auto 启动即落到对应档位；
 //   5. 监听通知——mode/active 订阅在档位变更与生效态翻转时收到通知；
-//   6. auto 跟随外观——<html> 的 .dark 类变化经 MutationObserver 即时翻转；
+//   6. auto 跟随外观——<html> 的 .dark 类变化经 MutationObserver 即时翻转，
+//      纯 DOM 反应：翻转/通知全程不写 localStorage；
 //   7. 跨标签页同步——storage 事件把其它标签页的档位/生效态同步过来，
 //      旧布尔值（"1"/"0"）同样在事件路径迁移。
 // dshell.ts 是模块级单例（import 时读 localStorage 并 applyDshellClass），
@@ -272,6 +273,37 @@ describe("lib/dshell opt-in 契约", () => {
     expect(mod.isDshellActive()).toBe(false);
     expect(document.documentElement.classList.contains("dshell")).toBe(false);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("auto 档跟随 .dark 是纯 DOM 反应：翻转/通知全程不写 localStorage", async () => {
+    // boot("auto") 完成后再装 spy：启动时的 seed 写入不计入，
+    // 之后任何 setItem/removeItem 都会被捕获。
+    const mod = await boot("auto");
+    const setSpy = vi.spyOn(Storage.prototype, "setItem");
+    const removeSpy = vi.spyOn(Storage.prototype, "removeItem");
+    const listener = vi.fn();
+    mod.subscribeDshellActive(listener);
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    // 切到暗色：生效 + 类同步 + 通知，但存储值保持 auto 且零写入
+    document.documentElement.classList.add("dark");
+    await tick();
+    expect(mod.isDshellActive()).toBe(true);
+    expect(document.documentElement.classList.contains("dshell")).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem(KEY)).toBe("auto");
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(removeSpy).not.toHaveBeenCalled();
+
+    // 切回亮色：停用 + 类移除 + 再通知，仍零写入
+    document.documentElement.classList.remove("dark");
+    await tick();
+    expect(mod.isDshellActive()).toBe(false);
+    expect(document.documentElement.classList.contains("dshell")).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(window.localStorage.getItem(KEY)).toBe("auto");
+    expect(setSpy).not.toHaveBeenCalled();
+    expect(removeSpy).not.toHaveBeenCalled();
   });
 });
 
