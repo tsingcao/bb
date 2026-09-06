@@ -18,13 +18,19 @@ import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar.js";
 import {
   ThreadTitleMentionResourcesProvider,
   useSidebarThreadTitleMentionResources,
 } from "@/components/thread/ThreadTitleMentions";
-import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
+import {
+  AppCommandShortcutHint,
+  AppCommandShortcutPill,
+} from "@/components/commands/AppCommandShortcutHint";
 import { CommandPalette } from "@/components/commands/CommandPalette";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@bb/shared-ui/tooltip";
+import { sidebarMessages } from "@/lib/sidebar-messages";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
 import { DshellMigrationBanner } from "@/components/settings/DshellMigrationBanner";
 import {
@@ -235,6 +241,45 @@ interface SidebarTriggerOverlayProps {
   usesDesktopChrome: boolean;
 }
 
+interface SidebarTriggerTooltipProps {
+  trigger: React.ReactNode;
+  sidebarShortcut: ReturnType<typeof useAppCommandShortcut> | null;
+  railToggleShortcut: ReturnType<typeof useAppCommandShortcut> | null;
+  rail: boolean;
+}
+
+/**
+ * 侧栏触发按钮的 tooltip：主动作「Toggle sidebar」+ ⌘\ 药丸；rail 态下
+ * 追加「Expand icon rail」+ ⌘⇧\ 药丸（从触发按钮也能看到收成/展开 rail 的
+ * 快捷键）。文案全部走 sidebarMessages（i18n 接缝）。
+ */
+function SidebarTriggerTooltip({
+  trigger,
+  sidebarShortcut,
+  railToggleShortcut,
+  rail,
+}: SidebarTriggerTooltipProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+      <TooltipContent side="right" align="start" className="flex flex-col gap-1">
+        <span className="flex items-center gap-1.5">
+          {sidebarMessages.toggleSidebarLabel}
+          {sidebarShortcut !== null ? (
+            <AppCommandShortcutPill shortcut={sidebarShortcut} />
+          ) : null}
+        </span>
+        {rail && railToggleShortcut !== null ? (
+          <span className="flex items-center gap-1.5">
+            {sidebarMessages.railExpandLabel}
+            <AppCommandShortcutPill shortcut={railToggleShortcut} />
+          </span>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function SidebarTriggerOverlay({
   reserveMacosTrafficLights,
   usesDesktopChrome,
@@ -246,13 +291,18 @@ function SidebarTriggerOverlay({
     () => "closed",
   );
   const shortcut = useAppCommandShortcut("sidebar.toggle");
+  const railToggleShortcut = useAppCommandShortcut("sidebar.railToggle");
+  const { rail } = useSidebar();
   if (isCompactViewport && compactSecondaryPanelPresentation !== "closed") {
     return null;
   }
   const triggerProps = {
     "aria-label": shortcut
-      ? `Toggle sidebar (${shortcut.label})`
-      : "Toggle sidebar",
+      ? sidebarMessages.shortcutHint(
+          sidebarMessages.toggleSidebarLabel,
+          shortcut.label,
+        )
+      : sidebarMessages.toggleSidebarLabel,
     "aria-keyshortcuts": shortcut?.ariaKeyshortcuts,
   };
   if (usesDesktopChrome) {
@@ -271,9 +321,16 @@ function SidebarTriggerOverlay({
         )}
       >
         {}
-        <SidebarTrigger
-          className={MACOS_CHROME_CONTROL_NO_DRAG_CLASS}
-          {...triggerProps}
+        <SidebarTriggerTooltip
+          trigger={
+            <SidebarTrigger
+              className={MACOS_CHROME_CONTROL_NO_DRAG_CLASS}
+              {...triggerProps}
+            />
+          }
+          sidebarShortcut={shortcut}
+          railToggleShortcut={railToggleShortcut}
+          rail={rail}
         />
         <AppCommandShortcutHint
           shortcut={shortcut}
@@ -295,7 +352,12 @@ function SidebarTriggerOverlay({
         BROWSER_SIDEBAR_TRIGGER_INSET_CLASS,
       )}
     >
-      <SidebarTrigger {...triggerProps} />
+      <SidebarTriggerTooltip
+        trigger={<SidebarTrigger {...triggerProps} />}
+        sidebarShortcut={shortcut}
+        railToggleShortcut={railToggleShortcut}
+        rail={rail}
+      />
       <AppCommandShortcutHint
         shortcut={shortcut}
         className="absolute left-full ml-1"

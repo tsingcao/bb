@@ -152,7 +152,6 @@ html.dshell [data-rail-peek="true"] [data-sidebar="panel"] {
     1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 8%, transparent);
 }
 
-
 /* --- 5. 内容区：保持可读不透明，仅加顶部发丝辉光与角落环境光 --------------- */
 html.dshell [data-sidebar="inset"] {
   background:

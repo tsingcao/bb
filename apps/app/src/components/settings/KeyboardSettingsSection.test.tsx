@@ -53,6 +53,19 @@ const testState = vi.hoisted(() => {
       when: { all: ["mainSurface"], none: ["modalOpen"] },
     },
     {
+      command: "sidebar.railToggle",
+      desktopOnly: false,
+      shortcut: {
+        key: "\\",
+        mod: true,
+        meta: false,
+        control: false,
+        alt: false,
+        shift: true,
+      },
+      when: { all: ["mainSurface"], none: ["modalOpen"] },
+    },
+    {
       command: "thread.archive",
       desktopOnly: false,
       shortcut: null,
@@ -321,6 +334,65 @@ describe("KeyboardSettingsSection", () => {
           },
         },
       ],
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+  });
+
+  it("surfaces the sidebar.railToggle ⌘⇧\\ binding in the shortcuts list", () => {
+    render(<KeyboardSettingsSection />);
+    const defaults = screen.getByLabelText(
+      "Default shortcut for Toggle icon rail",
+    );
+    const webDefault = within(defaults).getByText("Ctrl + Shift + \\");
+    expect(webDefault.tagName).toBe("KBD");
+    const recorder = screen.getByRole("button", {
+      name: "Record shortcut for Toggle icon rail, current shortcut Ctrl + Shift + \\",
+    });
+    expect(within(recorder).getByText("Ctrl + Shift + \\")).toBeDefined();
+  });
+
+  it("rebinding sidebar.railToggle records an override with the new shortcut", () => {
+    render(<KeyboardSettingsSection />);
+    const recorder = screen.getByRole("button", {
+      name: "Record shortcut for Toggle icon rail, current shortcut Ctrl + Shift + \\",
+    });
+
+    fireEvent.click(recorder);
+    expect(screen.getByText("Press keys")).toBeDefined();
+    fireEvent.keyDown(recorder, {
+      key: "K",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    expect(testState.mutate).toHaveBeenLastCalledWith(
+      [
+        {
+          command: "sidebar.railToggle",
+          shortcut: {
+            key: "k",
+            mod: true,
+            meta: false,
+            control: false,
+            alt: false,
+            shift: true,
+          },
+        },
+      ],
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+  });
+
+  it("disabling sidebar.railToggle records a null override", () => {
+    render(<KeyboardSettingsSection />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Clear shortcut for Toggle icon rail",
+      }),
+    );
+
+    expect(testState.mutate).toHaveBeenLastCalledWith(
+      [{ command: "sidebar.railToggle", shortcut: null }],
       expect.objectContaining({ onError: expect.any(Function) }),
     );
   });
