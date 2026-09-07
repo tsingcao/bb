@@ -598,4 +598,221 @@ describe("KeyboardSettingsSection", () => {
     expect(within(defaults).queryByText("Web")).toBeNull();
     expect(within(defaults).queryByText("Desktop")).toBeNull();
   });
+
+  it("Escape cancels recording without mutating and restores the idle label", () => {
+    render(<KeyboardSettingsSection />);
+    const recorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+
+    fireEvent.click(recorder);
+    expect(screen.getByText("Press keys")).toBeDefined();
+    expect(recorder.getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.keyDown(recorder, { key: "Escape" });
+    expect(screen.queryByText("Press keys")).toBeNull();
+    expect(recorder.getAttribute("aria-pressed")).toBe("false");
+    expect(
+      screen.getByRole("button", {
+        name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+      }),
+    ).toBeDefined();
+    expect(testState.mutate).not.toHaveBeenCalled();
+  });
+
+  it("Escape also clears a validation error left by a rejected chord", () => {
+    render(<KeyboardSettingsSection />);
+    const recorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+
+    fireEvent.click(recorder);
+    fireEvent.keyDown(recorder, { key: "O" });
+    expect(
+      screen.getByText("Use Command, Control, or Alt with a key."),
+    ).toBeDefined();
+
+    fireEvent.keyDown(recorder, { key: "Escape" });
+    expect(
+      screen.queryByText("Use Command, Control, or Alt with a key."),
+    ).toBeNull();
+    expect(screen.queryByText("Press keys")).toBeNull();
+    expect(testState.mutate).not.toHaveBeenCalled();
+  });
+
+  it("records the same chord on two commands: both persist and both rows warn", () => {
+    render(<KeyboardSettingsSection />);
+    const newThreadRecorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+    fireEvent.click(newThreadRecorder);
+    fireEvent.keyDown(newThreadRecorder, {
+      key: "U",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    const railRecorder = screen.getByRole("button", {
+      name: "Record shortcut for Toggle icon rail, current shortcut Ctrl + Shift + \\",
+    });
+    fireEvent.click(railRecorder);
+    fireEvent.keyDown(railRecorder, {
+      key: "U",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    expect(testState.mutate).toHaveBeenLastCalledWith(
+      [
+        {
+          command: "thread.new",
+          shortcut: {
+            key: "u",
+            mod: true,
+            meta: false,
+            control: false,
+            alt: false,
+            shift: true,
+          },
+        },
+        {
+          command: "sidebar.railToggle",
+          shortcut: {
+            key: "u",
+            mod: true,
+            meta: false,
+            control: false,
+            alt: false,
+            shift: true,
+          },
+        },
+      ],
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
+    expect(screen.getByText(/Also used by New thread\./u)).toBeDefined();
+    expect(screen.getByText(/Also used by Toggle icon rail\./u)).toBeDefined();
+  });
+
+  it("starting a second recorder cancels the first via the blur path", () => {
+    render(<KeyboardSettingsSection />);
+    const newThreadRecorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+    fireEvent.click(newThreadRecorder);
+    expect(screen.getByText("Press keys")).toBeDefined();
+
+    const railRecorder = screen.getByRole("button", {
+      name: "Record shortcut for Toggle icon rail, current shortcut Ctrl + Shift + \\",
+    });
+    fireEvent.click(railRecorder);
+
+    expect(
+      screen.queryByText("Record shortcut for New thread, current shortcut Ctrl + Shift + O"),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+      }),
+    ).toBeDefined();
+    expect(railRecorder.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getAllByText("Press keys")).toHaveLength(1);
+    expect(testState.mutate).not.toHaveBeenCalled();
+  });
+
+  it("a modifier-only keydown keeps recording and shows the non-modifier hint", () => {
+    render(<KeyboardSettingsSection />);
+    const recorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+
+    fireEvent.click(recorder);
+    fireEvent.keyDown(recorder, { key: "Shift", shiftKey: true });
+    expect(screen.getByText("Press a non-modifier key.")).toBeDefined();
+    expect(recorder.getAttribute("aria-pressed")).toBe("true");
+    expect(testState.mutate).not.toHaveBeenCalled();
+  });
+
+  it("a bare key without modifiers shows the require-modifier error and keeps recording", () => {
+    render(<KeyboardSettingsSection />);
+    const recorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+
+    fireEvent.click(recorder);
+    fireEvent.keyDown(recorder, { key: "O" });
+    expect(
+      screen.getByText("Use Command, Control, or Alt with a key."),
+    ).toBeDefined();
+    expect(recorder.getAttribute("aria-pressed")).toBe("true");
+    expect(testState.mutate).not.toHaveBeenCalled();
+
+    // 同一次录制会话内修正：带修饰键的组合直接生效，错误消失。
+    fireEvent.keyDown(recorder, {
+      key: "U",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(
+      screen.queryByText("Use Command, Control, or Alt with a key."),
+    ).toBeNull();
+    expect(testState.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("conflict warnings clear when the colliding command is reset", () => {
+    const { rerender } = render(<KeyboardSettingsSection />);
+    const newThreadRecorder = screen.getByRole("button", {
+      name: "Record shortcut for New thread, current shortcut Ctrl + Shift + O",
+    });
+    fireEvent.click(newThreadRecorder);
+    fireEvent.keyDown(newThreadRecorder, {
+      key: "U",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+
+    const jumpRecorder = screen.getByRole("button", {
+      name: "Record shortcut for Open thread 1, current shortcut Ctrl + Shift + 1",
+    });
+    fireEvent.click(jumpRecorder);
+    fireEvent.keyDown(jumpRecorder, {
+      key: "U",
+      ctrlKey: true,
+      shiftKey: true,
+    });
+    expect(screen.getByText(/Also used by New thread\./u)).toBeDefined();
+    expect(screen.getByText(/Also used by Open thread 1\./u)).toBeDefined();
+
+    // 服务端回推「Open thread 1 重置回默认」后的状态（另一窗口同步）：只剩
+    // thread.new 的 override，draft sourceKey 与服务端不一致即回退到服务端状态，
+    // 冲突警告应随之消失。
+    testState.keybindingOverrides = [
+      {
+        command: "thread.new",
+        shortcut: {
+          key: "u",
+          mod: true,
+          meta: false,
+          control: false,
+          alt: false,
+          shift: true,
+        },
+      },
+    ];
+    testState.defaultKeybindings = structuredClone(
+      testState.defaultKeybindings,
+    );
+    rerender(<KeyboardSettingsSection />);
+
+    expect(screen.queryByText(/Also used by/u)).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Record shortcut for Open thread 1, current shortcut Ctrl + Shift + 1",
+      }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", {
+        name: "Record shortcut for New thread, current shortcut Ctrl + Shift + U",
+      }),
+    ).toBeDefined();
+  });
 });
