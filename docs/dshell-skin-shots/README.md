@@ -14,6 +14,12 @@ DSH-WORKTABLE 视觉语言在 bb 外壳上的落地，配套 `apps/app/src/compo
 - 三态档位卡片在控件下方内联一行三档说明（`MODE_HELP_LINE`，与各档按钮悬停提示同源，
   改动一处两处同步），auto 档额外显示 Active/Inactive now 实时提示。
 
+## 工作流归属清单
+
+六个皮肤工作流（终端主题 / 玻璃动画 / 性能护栏 / 快照 gate / overlay peek / 单测）的
+提交归属与未提交残留见 [WORKSTREAMS.md](./WORKSTREAMS.md)——改皮肤代码/CI/基线前先查
+归属，避免并发流互相追赶基线。
+
 ## 一次性迁移横幅（legacy 布尔值 → 三态）
 
 opt-in 三态（Original/Auto/Always）落地前，旧版本用布尔值 `bb.dshell.enabled="1"`/
