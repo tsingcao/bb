@@ -226,8 +226,11 @@ html.dshell [data-testid="sidebar-rail-toggle"] {
 /* 面板根＝⌘J/对话折叠动画实际动画的 flex 层：毛玻璃挂在这里，
    折叠/展开全程、以及 aside 滑动面比根窄（吸附/过渡中间帧）时都保持玻璃质感。
    描边/辉光等皮肤层过渡与面板自带节奏同步（--panel-collapse-duration，见
-   panelTransitionTokens.ts；拖拽分栏时该变量被临时置 0ms，此处同步禁用）。 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] {
+   panelTransitionTokens.ts；拖拽分栏时该变量被临时置 0ms，此处同步禁用）。
+   选择器用 [data-panel-id^="thread-detail-secondary-panel"] 前缀匹配：SecondaryPanelLayout
+   在分栏/多栏布局下发 thread-detail-secondary-panel-${paneId}（如 -pane-2），
+   与主面板是同一组件实例族，必须吃到同一套玻璃 + §13 scrubbing + perf 护栏。 */
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] {
   background: color-mix(in oklab, var(--canvas) 72%, transparent);
   -webkit-backdrop-filter: blur(22px) saturate(1.4);
   backdrop-filter: blur(22px) saturate(1.4);
@@ -250,7 +253,7 @@ html.dshell [data-panel-id="thread-detail-secondary-panel"] {
 }
 /* aside 是根内绝对定位的滑动面：自身不再叠玻璃（避免嵌套 blur 与
    aside<根宽的折叠缝隙漏出无玻璃夹层），毛玻璃统一由根提供。 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] aside {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] aside {
   background: transparent;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -258,33 +261,33 @@ html.dshell [data-panel-id="thread-detail-secondary-panel"] aside {
   box-shadow: none;
 }
 /* 顶层 chrome（tab 行）：最透的玻璃层 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] aside .shrink-0.select-none.bg-sidebar {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] aside .shrink-0.select-none.bg-sidebar {
   background: color-mix(in oklab, var(--canvas) 58%, transparent);
   border-bottom: 1px solid color-mix(in oklab, var(--dsh-cyan-soft) 16%, transparent);
 }
 /* 内容区：保证长文/终端可读性 —— 较实的暗底 + 轻 blur */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] aside
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] aside
   > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
   background: color-mix(in oklab, var(--canvas) 84%, transparent);
 }
 /* 剥掉内层重复的 bg-sidebar，避免层层叠透明 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] aside .bg-sidebar {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] aside .bg-sidebar {
   background: transparent;
 }
 /* 终端：把 xterm 画布放到我们自己的玻璃底上 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm,
-html.dshell [data-panel-id="thread-detail-secondary-panel"] .xterm-viewport {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] .terminal.xterm,
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] .xterm-viewport {
   background-color: transparent !important;
 }
-html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] .terminal.xterm {
   border-radius: 10px;
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dsh-cyan-soft) 10%, transparent);
 }
 /* 其余 tool 面板（diff/浏览器等）同玻璃底 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] aside section {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] aside section {
   background: transparent;
 }
-html.dshell:not(.dark) [data-panel-id="thread-detail-secondary-panel"] aside
+html.dshell:not(.dark) [data-panel-id^="thread-detail-secondary-panel"] aside
   > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
   background: color-mix(in oklab, var(--canvas) 88%, transparent);
 }
@@ -363,10 +366,10 @@ html.dshell:not(.dark) {
   --dsh-term-selection: oklch(0.7 0.11 210 / 0.4);
 }
 /* 画布色由 xterm 主题逐格绘制 + viewport 底色补齐 letterbox；仅补青色发丝内描边。 */
-html.dshell [data-panel-id="thread-detail-secondary-panel"] .terminal.xterm {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] .terminal.xterm {
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--dsh-cyan-soft) 14%, transparent);
 }
-html.dshell [data-panel-id="thread-detail-secondary-panel"] .xterm-viewport {
+html.dshell [data-panel-id^="thread-detail-secondary-panel"] .xterm-viewport {
   background-color: var(--dsh-term-bg);
 }
 
@@ -387,17 +390,17 @@ html.dshell [data-app-terminal] .xterm-viewport {
 /* dshell-panel-perf.ts 在面板滚动/终端高频重绘/分栏拖拽时挂 html.dshell-scrubbing：
    模糊半径 22px→6px（滚动静止 ~150ms 后恢复），底色提高不透明度以补偿降级后的
    边缘锐度；终端画布本身不透明，不受影响。 */
-html.dshell.dshell-scrubbing [data-panel-id="thread-detail-secondary-panel"] {
+html.dshell.dshell-scrubbing [data-panel-id^="thread-detail-secondary-panel"] {
   -webkit-backdrop-filter: blur(6px) saturate(1.2);
   backdrop-filter: blur(6px) saturate(1.2);
   background: color-mix(in oklab, var(--canvas) 80%, transparent);
   box-shadow: -1px 0 0 color-mix(in oklab, var(--dsh-cyan-soft) 6%, transparent);
 }
-html.dshell.dshell-scrubbing [data-panel-id="thread-detail-secondary-panel"] aside
+html.dshell.dshell-scrubbing [data-panel-id^="thread-detail-secondary-panel"] aside
   > div.flex.min-h-0.flex-1.flex-col.overflow-hidden.bg-sidebar {
   background: color-mix(in oklab, var(--canvas) 86%, transparent);
 }
-html.dshell.dshell-scrubbing [data-panel-id="thread-detail-secondary-panel"] aside
+html.dshell.dshell-scrubbing [data-panel-id^="thread-detail-secondary-panel"] aside
   .shrink-0.select-none.bg-sidebar {
   background: color-mix(in oklab, var(--canvas) 66%, transparent);
 }
