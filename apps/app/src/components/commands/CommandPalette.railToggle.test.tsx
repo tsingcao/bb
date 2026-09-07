@@ -129,9 +129,17 @@ vi.mock("./ThreadPaletteResults", () => ({
 }));
 
 /** 真实 SidebarStateBridge 的同构装配：rail 启用时先强制展开侧栏再翻转 rail。 */
-function RailHost({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(true);
-  const [rail, setRail] = useState(false);
+function RailHost({
+  children,
+  initialOpen = true,
+  initialRail = false,
+}: {
+  children: ReactNode;
+  initialOpen?: boolean;
+  initialRail?: boolean;
+}) {
+  const [open, setOpen] = useState(initialOpen);
+  const [rail, setRail] = useState(initialRail);
   return (
     <SidebarProvider
       open={open}
@@ -163,14 +171,24 @@ function RailProbe() {
   return <output data-testid="rail-probe">{String(rail)}</output>;
 }
 
-function renderHarness() {
+/** 把 provider 的 open 状态暴露给断言（rail 强制展开不变式需要同时看两个原子）。 */
+function OpenProbe() {
+  const { open } = useSidebar();
+  return <output data-testid="open-probe">{String(open)}</output>;
+}
+
+function renderHarness(opts?: { initialOpen?: boolean; initialRail?: boolean }) {
   const result = render(
     <MemoryRouter>
       <AppCommandProvider>
-        <RailHost>
+        <RailHost
+          initialOpen={opts?.initialOpen}
+          initialRail={opts?.initialRail}
+        >
           <RailToggleCommandBridge />
           <SidebarRailToggle />
           <RailProbe />
+          <OpenProbe />
         </RailHost>
         <button type="button" data-testid="origin">
           origin
@@ -216,6 +234,9 @@ const railToggleButton = () =>
 
 const railProbeValue = () =>
   (screen.getByTestId("rail-probe") as HTMLOutputElement).textContent;
+
+const openProbeValue = () =>
+  (screen.getByTestId("open-probe") as HTMLOutputElement).textContent;
 
 afterEach(() => {
   cleanup();
@@ -304,6 +325,30 @@ describe("sidebar.railToggle from the command palette", () => {
     fireEvent.click(row!);
     await waitFor(() => expect(screen.queryByRole("combobox")).toBeNull());
     await waitFor(() => expect(railProbeValue()).toBe("true"));
+    expect(railToggleButton().getAttribute("aria-label")).toMatch(
+      /^Expand icon rail \(/,
+    );
+  });
+
+  it("rail off + sidebar collapsed: enabling rail via the palette forces open (open and rail both true)", async () => {
+    renderHarness({ initialOpen: false });
+
+    // 初始：侧栏收起 + rail 关 —— railToggle 尚未触发的原子组合
+    expect(openProbeValue()).toBe("false");
+    expect(railProbeValue()).toBe("false");
+
+    openPalette();
+    await waitFor(() => expect(screen.getByRole("combobox")).toBeTruthy());
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: ">Toggle icon rail" },
+    });
+    await pickCommand("Toggle icon rail");
+    await waitFor(() => expect(screen.queryByRole("combobox")).toBeNull());
+
+    // railToggle 启用 rail → onRailChange 强制展开侧栏：open 与 rail 同时为真
+    // （与 AppLayout handleRailChange 的 `if (nextRail) handleOpenChange(true)` 一致）。
+    await waitFor(() => expect(railProbeValue()).toBe("true"));
+    await waitFor(() => expect(openProbeValue()).toBe("true"));
     expect(railToggleButton().getAttribute("aria-label")).toMatch(
       /^Expand icon rail \(/,
     );
