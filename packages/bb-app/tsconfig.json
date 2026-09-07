@@ -4,8 +4,10 @@
     "@bb/tsconfig/typecheck-overrides.json"
   ],
   "compilerOptions": {
-    "rootDir": ".",
-    "types": ["node"]
+    // rootDir 放宽到仓库根：test/ 的 dev-runner 用例会跨包引用 .bb/skills/*/skill.ts
+    // （run-bb-dev skill），typecheck-overrides 已 noEmit，不影响 esbuild 发射。
+    "rootDir": "../..",
+    "types": ["node", "vitest/globals"]
   },
   "include": ["src", "test"]
 }

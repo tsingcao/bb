@@ -91,3 +91,8 @@ provider-recordings/raw/
 **/provider-corpus/**
 !apps/server/test/provider-corpus/**
 !scripts/provider-corpus/**
+
+# dev-runner 运行时产物（longrun 检查点 / 模型验证结果，非源码）
+.bb/longrun/
+.bb/verified-models*.json
+packages/bb-app/.bb/
