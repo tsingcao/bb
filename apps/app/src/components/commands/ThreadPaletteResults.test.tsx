@@ -11,6 +11,7 @@ import {
   useThreadSearch,
   type UseThreadSearchResult,
 } from "@/hooks/queries/thread-queries";
+import { paletteMessages } from "@/lib/palette-messages";
 import {
   ThreadPaletteResults,
   type ThreadPaletteNavigationItem,
@@ -141,7 +142,9 @@ describe("ThreadPaletteResults", () => {
 
     renderResults({ query: "needle updated" });
 
-    expect(screen.getByText("Searching threads...")).not.toBeNull();
+    expect(
+      screen.getByText(paletteMessages.searchingThreads),
+    ).not.toBeNull();
     expect(screen.queryByRole("option")).toBeNull();
   });
 
@@ -218,7 +221,9 @@ describe("ThreadPaletteResults", () => {
 
     renderResults({ query: "cleanup" });
 
-    expect(screen.getByText("Archived")).not.toBeNull();
+    expect(
+      screen.getByText(paletteMessages.archivedSectionLabel),
+    ).not.toBeNull();
     expect(screen.getByText("1/3")).not.toBeNull();
   });
 });

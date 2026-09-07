@@ -16,6 +16,7 @@ import {
   type AppKeybinding,
 } from "@bb/domain";
 import { CompactViewportOverrideProvider } from "@bb/shared-ui/hooks/use-compact-viewport";
+import { paletteMessages } from "@/lib/palette-messages";
 import { AppCommandProvider, useAppCommandHandler } from "./AppCommandProvider";
 import {
   removePluginSlotRegistrations,
@@ -439,7 +440,7 @@ describe("CommandPalette", () => {
     fireEvent.change(searchField(), { target: { value: ">zzzzz" } });
 
     await waitFor(() =>
-      expect(screen.getByText("No matching commands")).toBeTruthy(),
+      expect(screen.getByText(paletteMessages.noMatchingCommands)).toBeTruthy(),
     );
     fireEvent.keyDown(searchField(), { key: "Enter" });
     expect(testState.calls).toEqual([]);
@@ -451,13 +452,13 @@ describe("CommandPalette", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole("combobox", { name: "Search threads" }),
+        screen.getByRole("combobox", { name: paletteMessages.searchThreads }),
       ).toBeTruthy(),
     );
     expect(event.defaultPrevented).toBe(true);
     expect((searchField() as HTMLInputElement).value).toBe("");
     expect(screen.getByRole("listbox").getAttribute("aria-label")).toBe(
-      "Thread search results",
+      paletteMessages.threadSearchListLabel,
     );
   });
 
@@ -468,14 +469,16 @@ describe("CommandPalette", () => {
 
     fireEvent.change(searchField(), { target: { value: ">search threads" } });
     await waitFor(() =>
-      expect(selectedOption()?.textContent).toContain("Search threads"),
+      expect(selectedOption()?.textContent).toContain(
+        paletteMessages.searchThreads,
+      ),
     );
     fireEvent.keyDown(searchField(), { key: "Enter" });
 
     expect(
       (
         screen.getByRole("combobox", {
-          name: "Search threads",
+          name: paletteMessages.searchThreads,
         }) as HTMLInputElement
       ).value,
     ).toBe("");

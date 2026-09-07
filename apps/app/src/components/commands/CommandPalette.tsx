@@ -33,6 +33,7 @@ import {
   recordPaletteRecent,
 } from "@/lib/command-palette/palette-recents";
 import { buildPluginPaletteActions } from "@/lib/command-palette/palette-plugin-actions";
+import { paletteMessages } from "@/lib/palette-messages";
 import { buildSettingsPaletteActions } from "@/lib/command-palette/palette-settings-actions";
 import { buildPluginPagePaletteActions } from "@/lib/command-palette/palette-plugin-page-actions";
 import { usePluginSlots } from "@/lib/plugin-slots";
@@ -305,7 +306,10 @@ export function CommandPalette({ threadId, projectId }: CommandPaletteProps) {
       : mode === "commands"
         ? `${optionIdPrefix}-${activeIndex}`
         : threadItems[activeIndex]?.optionId;
-  const inputLabel = mode === "commands" ? "Search commands" : "Search threads";
+  const inputLabel =
+    mode === "commands"
+      ? paletteMessages.searchCommands
+      : paletteMessages.searchThreads;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -317,7 +321,9 @@ export function CommandPalette({ threadId, projectId }: CommandPaletteProps) {
         data-testid="command-palette"
       >
         <DialogTitle className="sr-only">
-          {mode === "commands" ? "Quick palette" : "Search threads"}
+          {mode === "commands"
+            ? paletteMessages.quickPaletteTitle
+            : paletteMessages.searchThreads}
         </DialogTitle>
         <div className="flex items-center gap-2 border-b px-3">
           <Icon
@@ -351,13 +357,15 @@ export function CommandPalette({ threadId, projectId }: CommandPaletteProps) {
           id={listId}
           role="listbox"
           aria-label={
-            mode === "commands" ? "Commands" : "Thread search results"
+            mode === "commands"
+              ? paletteMessages.commandsListLabel
+              : paletteMessages.threadSearchListLabel
           }
           className="max-h-[min(24rem,50dvh)] overflow-y-auto p-1"
         >
           {mode === "commands" && rankedCommands.length === 0 ? (
             <p className="px-2 py-6 text-center text-sm text-muted-foreground">
-              No matching commands
+              {paletteMessages.noMatchingCommands}
             </p>
           ) : mode === "commands" ? (
             rankedCommands.map((entry, index) => (

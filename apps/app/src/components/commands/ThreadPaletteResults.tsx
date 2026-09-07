@@ -35,6 +35,7 @@ import {
 } from "@/hooks/queries/thread-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
 import { usePromptDraftHasInput } from "@/hooks/usePromptDraftStorage";
+import { paletteMessages } from "@/lib/palette-messages";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 
@@ -167,13 +168,30 @@ export function ThreadPaletteResults({
           matches: EMPTY_MATCHES,
           thread,
         }));
-      return [{ id: "active", label: "Recent", rows, total: rows.length }];
+      return [
+        {
+          id: "active",
+          label: paletteMessages.recentSectionLabel,
+          rows,
+          total: rows.length,
+        },
+      ];
     }
 
     if (!searchResultsAreCurrent) {
       return [
-        { id: "active", label: "Threads", rows: [], total: 0 },
-        { id: "archived", label: "Archived", rows: [], total: 0 },
+        {
+          id: "active",
+          label: paletteMessages.threadsSectionLabel,
+          rows: [],
+          total: 0,
+        },
+        {
+          id: "archived",
+          label: paletteMessages.archivedSectionLabel,
+          rows: [],
+          total: 0,
+        },
       ];
     }
 
@@ -192,13 +210,13 @@ export function ThreadPaletteResults({
     return [
       {
         id: "active",
-        label: "Threads",
+        label: paletteMessages.threadsSectionLabel,
         rows: activeRows,
         total: threadSearch.data?.active.total ?? 0,
       },
       {
         id: "archived",
-        label: "Archived",
+        label: paletteMessages.archivedSectionLabel,
         rows: archivedRows,
         total: threadSearch.data?.archived.total ?? 0,
       },
@@ -243,27 +261,33 @@ export function ThreadPaletteResults({
         <ThreadSearchMessage
           iconName="Spinner"
           isLoading
-          text="Loading threads..."
+          text={paletteMessages.loadingThreads}
         />
       ) : null}
       {isLoading ? (
         <ThreadSearchMessage
           iconName="Spinner"
           isLoading
-          text="Searching threads..."
+          text={paletteMessages.searchingThreads}
         />
       ) : null}
       {showError ? (
-        <ThreadSearchMessage iconName="AlertCircle" text="Search failed." />
+        <ThreadSearchMessage
+          iconName="AlertCircle"
+          text={paletteMessages.searchFailed}
+        />
       ) : null}
       {showNoSearchResults ? (
         <ThreadSearchMessage
           iconName="MessageQuestion"
-          text="No matching threads"
+          text={paletteMessages.noMatchingThreads}
         />
       ) : null}
       {showTypeToSearch ? (
-        <ThreadSearchMessage iconName="Search" text="Type to search threads." />
+        <ThreadSearchMessage
+          iconName="Search"
+          text={paletteMessages.typeToSearchThreads}
+        />
       ) : null}
       {sections.map((section) => {
         const sectionStartIndex = startIndex;
