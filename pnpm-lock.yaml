@@ -1423,6 +1423,9 @@ importers:
 
   packages/bb-app:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.3.6)
       '@parcel/watcher':
         specifier: 2.5.6
         version: 2.5.6
