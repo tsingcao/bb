@@ -3,10 +3,20 @@ import { Icon, ICON_NAMES, type IconName } from "@bb/shared-ui/icon";
 import { usePluginCompactBranding } from "@/lib/plugin-logos";
 import { cn } from "@bb/shared-ui/lib/utils";
 
+// 插件声明的图标名里，未在本应用图标集内的映射到语义相近的原生图标。
+// 插件生态用 lucide 风格命名（如 harness 插件的 MessagesSquare/LayoutDashboard/
+// Home），应用图标集是 hugeicons——保留插件声明名可解析（不落回 Zap），
+// 渲染用右侧的原生别名。
+const PLUGIN_ICON_ALIASES: Record<string, IconName> = {
+  MessagesSquare: "MessageSquare",
+  LayoutDashboard: "GridView",
+  Home: "AppWindow",
+};
+
 export function pluginIconName(icon: string | null): IconName {
-  return icon !== null && (ICON_NAMES as readonly string[]).includes(icon)
-    ? (icon as IconName)
-    : "Zap";
+  if (icon === null) return "Zap";
+  if ((ICON_NAMES as readonly string[]).includes(icon)) return icon as IconName;
+  return PLUGIN_ICON_ALIASES[icon] ?? "Zap";
 }
 
 export function PluginCompactIconMask({

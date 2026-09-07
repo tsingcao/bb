@@ -131,7 +131,18 @@ it("resolves every named branding.icon the shipped plugins declare", async () =>
   }
 
   expect(declared.length).toBeGreaterThan(0);
-  expect(declared.filter(([, icon]) => pluginIconName(icon) !== icon)).toEqual(
-    [],
+  // 每个声明的命名图标都必须可解析：要么本身在图标集内，要么经
+  // PLUGIN_ICON_ALIASES 映射到原生图标——绝不静默落回 Zap 兜底。
+  const unresolved = declared.filter(
+    ([, icon]) => pluginIconName(icon) === "Zap" && icon !== "Zap",
   );
+  expect(unresolved).toEqual([]);
+});
+
+it("maps foreign plugin icon names to native icons", async () => {
+  const { pluginIconName } = await import("./PluginIcon");
+
+  expect(pluginIconName("MessagesSquare")).toBe("MessageSquare");
+  expect(pluginIconName("LayoutDashboard")).toBe("GridView");
+  expect(pluginIconName("Home")).toBe("AppWindow");
 });
