@@ -458,4 +458,37 @@ describe("AppLayout sidebar rail persistence", () => {
     expect(railOn(getPanel())).toBe(true);
     expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
   });
+
+  // 真实 DOM 关闭路径（非命令）：SidebarTriggerOverlay 里的 SidebarTrigger 按钮
+  // （data-sidebar="trigger"）直接调 toggleSidebar() → handleOpenChange(!open)，
+  // 与 ⌘\\ / sidebar.toggle 命令同走 open 原子桥，但入口是用户可点的真实按钮。
+  // 逆向断言：rail 开着时点关闭钮——允许整体 offcanvas，rail 偏好不被解除。
+  it("closing via the real SidebarTriggerOverlay button while the rail is on keeps the rail preference and goes offcanvas", () => {
+    window.localStorage.setItem(SIDEBAR_RAIL_STORAGE_KEY, "true");
+    renderLayout();
+    expect(railOn(getPanel())).toBe(true);
+    expect(openState(getPanel())).toBe("expanded");
+
+    const trigger = document.querySelector(
+      '[data-testid="app-sidebar-trigger-overlay"] [data-sidebar="trigger"]',
+    );
+    if (!(trigger instanceof HTMLElement)) {
+      throw new Error("missing SidebarTriggerOverlay trigger button");
+    }
+
+    // 真实点击关闭钮：整条 toggleSidebar → setOpen(false) → 桥接持久化链路
+    fireEvent.click(trigger);
+    expect(openState(getPanel())).toBe("collapsed");
+    // icon 形态不残留半态：整个侧栏区 offcanvas
+    expect(getPanel().getAttribute("data-collapsible")).toBe("offcanvas");
+    // rail 偏好保持（单向不变式：仅「启用 rail → 强制展开」一侧受约束）
+    expect(window.localStorage.getItem(SIDEBAR_RAIL_STORAGE_KEY)).toBe("true");
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("false");
+
+    // 再点一次重开 → 回到 icon rail（不是直接 full 侧栏）
+    fireEvent.click(trigger);
+    expect(openState(getPanel())).toBe("expanded");
+    expect(railOn(getPanel())).toBe(true);
+    expect(window.localStorage.getItem(SIDEBAR_OPEN_STORAGE_KEY)).toBe("true");
+  });
 });
