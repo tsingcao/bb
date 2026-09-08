@@ -10,14 +10,21 @@
 dev 模式下 origin 受信、免登录，Playwright 直接可用真实会话。
 
 用法:
-  python3 scripts/keyboard-rebind-e2e.py [--url http://127.0.0.1:18154] [--command sidebar.railToggle]
+  python3 scripts/keyboard-rebind-e2e.py [--url http://127.0.0.1:18154] [--trace-dir DIR]
 
-默认目标命令 sidebar.railToggle（默认 ⇧⌘\\），新绑 ⌥⌘\\。失败/中断都会在 finally 里尝试
-Reset all，保证服务器设置净零残留。退出码: 0 全绿 / 1 断言失败 / 2 环境错误。
+默认目标命令 sidebar.railToggle（默认 mod+⇧+\\），新绑 mod+⌥+\\。组合键平台感知：
+macOS mod=⌘（⌥⌘\\），其它平台（含 Linux CI）mod=Ctrl（Ctrl+Alt+\\），与
+isMacKeyboardPlatform(navigator.platform) 同判据。录制行定位当前固定
+railToggle 行（RECORDER_BY_ROLE）。--trace-dir 指定时全程开 Playwright tracing：
+失败（exit 1/2）把 trace 落盘 DIR/rebind-trace.zip（含截图/DOM 快照）供 CI 上传，
+成功则丢弃。失败/中断都会在 finally 里尝试
+Reset all，保证服务器设置净零残留。
+退出码: 0 全绿 / 1 断言失败 / 2 环境错误。
 """
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import time
@@ -74,6 +81,12 @@ def recorder_button(page):
     return page.get_by_role("button", name=RECORDER_BY_ROLE).first
 
 
+def is_mac_platform(page) -> bool:
+    """与 domain 的 isMacKeyboardPlatform 同判据：Mac/iOS 平台 mod=⌘，否则 Ctrl。"""
+    platform = page.evaluate("navigator.platform") or ""
+    return re.search(r"Mac|iPhone|iPad|iPod", platform) is not None
+
+
 def current_shortcut_label(page) -> str | None:
     try:
         aria = recorder_button(page).get_attribute("aria-label")
@@ -110,10 +123,14 @@ def wait_for_override(page, base_url: str, command: str, present: bool, timeout_
     )
 
 
-def press_chord(page, meta: bool, alt: bool, shift: bool):
-    """用真实键盘 API 按下反斜杠组合（避免只发合成事件到 window）。"""
-    if meta:
-        page.keyboard.down("Meta")
+def press_chord(page, mod: str | None, alt: bool, shift: bool):
+    """用真实键盘 API 按下反斜杠组合（避免只发合成事件到 window）。
+
+    mod 是修饰键名（"Meta" 或 "Control"），由调用方按平台决定——
+    应用的 mod 语义在非 Mac 平台映射到 Ctrl（matchesAppShortcut 的 useMetaForMod）。
+    """
+    if mod:
+        page.keyboard.down(mod)
     if alt:
         page.keyboard.down("Alt")
     if shift:
@@ -123,19 +140,34 @@ def press_chord(page, meta: bool, alt: bool, shift: bool):
         page.keyboard.up("Shift")
     if alt:
         page.keyboard.up("Alt")
-    if meta:
-        page.keyboard.up("Meta")
+    if mod:
+        page.keyboard.up(mod)
 
 
 def fail(message: str) -> None:
     raise AssertionError(message)
 
 
-def run(base_url: str, command: str = "sidebar.railToggle") -> int:
+def run(
+    base_url: str,
+    command: str = "sidebar.railToggle",
+    trace_dir: str | None = None,
+) -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         context = browser.new_context()
+        if trace_dir:
+            # 全程 tracing：失败落盘 zip（含截图/DOM 快照/源），成功丢弃。
+            context.tracing.start(screenshots=True, snapshots=True, sources=True)
         page = context.new_page()
+        # 平台感知：默认 railToggle 绑定是 { mod: true, shift: true }，rebind 录
+        # { mod: true, alt: true }；mod 在 macOS=⌘、其它平台=Ctrl。标签断言里的
+        # Shift 标记同理（Mac 渲染 ⇧，其它平台渲染 "Shift" 字样）。
+        mac = is_mac_platform(page)
+        mod_key = "Meta" if mac else "Control"
+        default_marker = "⇧" if mac else "Shift"
+        rebind_text = f"⌥⌘{BS}" if mac else f"Ctrl+Alt+{BS}"
+        default_text = f"⇧⌘{BS}" if mac else f"Ctrl+Shift+{BS}"
         try:
             # --- 进入 Keyboard 设置 ---
             page.goto(f"{base_url}/settings/keyboard", wait_until="domcontentloaded")
@@ -151,13 +183,13 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
             if any(e.get("command") == command for e in before_overrides):
                 fail(f"server already has an override for {command}; refusing to run on a dirty state")
 
-            # --- 录制新快捷键 ⌥⌘\ ---
+            # --- 录制新快捷键（mod+⌥+\\）---
             recorder.click()
             pressed = recorder_button(page).get_attribute("aria-pressed")
             if pressed != "true":
                 fail(f"recorder did not enter recording state (aria-pressed={pressed})")
-            print("[2/7] 已进入录制态（aria-pressed=true）；按下 ⌥⌘\\")
-            press_chord(page, meta=True, alt=True, shift=False)
+            print(f"[2/7] 已进入录制态（aria-pressed=true）；按下 {rebind_text}")
+            press_chord(page, mod_key, alt=True, shift=False)
 
             page.wait_for_timeout(1500)
             overrides = wait_for_override(page, base_url, command, present=True)
@@ -167,11 +199,11 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
 
             # 设置页 UI：录制按钮应显示新组合 + Custom 徽标
             new_label = current_shortcut_label(page)
-            if new_label is None or new_label == initial_label or "⇧" in new_label:
+            if new_label is None or new_label == initial_label or default_marker in new_label:
                 fail(f"recorder label did not update to the new chord: {new_label!r}")
             print(f"[4/7] 设置页录制按钮更新为: {new_label!r}")
 
-            # --- 验证真实按键生效（回首页按 ⌥⌘\ 应触发 railToggle）---
+            # --- 验证真实按键生效（回首页按新组合应触发 railToggle）---
             page.goto(f"{base_url}/", wait_until="domcontentloaded")
             toggle = page.get_by_test_id("sidebar-rail-toggle").first
             toggle.wait_for(state="visible", timeout=20000)
@@ -179,22 +211,22 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
             if "icon rail" not in (aria0 or ""):
                 fail(f"rail toggle not found on home: {aria0!r}")
 
-            # 新组合 ⌥⌘\ 生效
-            press_chord(page, meta=True, alt=True, shift=False)
+            # 新组合生效
+            press_chord(page, mod_key, alt=True, shift=False)
             page.wait_for_timeout(600)
             aria1 = toggle.get_attribute("aria-label")
             state_flipped = ("Collapse" in (aria0 or "")) != ("Collapse" in (aria1 or ""))
             if not state_flipped:
-                fail(f"new chord ⌥⌘{BS} did not toggle the rail: {aria0!r} -> {aria1!r}")
-            print(f"[5/7] ⌥⌘{BS} 触发生效：rail 状态翻转（{aria0.split('(')[0].strip()} -> {aria1.split('(')[0].strip()}）")
+                fail(f"new chord {rebind_text} did not toggle the rail: {aria0!r} -> {aria1!r}")
+            print(f"[5/7] {rebind_text} 触发生效：rail 状态翻转（{aria0.split('(')[0].strip()} -> {aria1.split('(')[0].strip()}）")
 
-            # 旧默认 ⇧⌘\ 失效
-            press_chord(page, meta=True, alt=False, shift=True)
+            # 旧默认失效
+            press_chord(page, mod_key, alt=False, shift=True)
             page.wait_for_timeout(600)
             aria2 = toggle.get_attribute("aria-label")
             if ("Collapse" in (aria1 or "")) != ("Collapse" in (aria2 or "")):
-                fail(f"old default ⇧⌘{BS} still toggles the rail after rebind: {aria1!r} -> {aria2!r}")
-            print(f"[5b] 旧默认 ⇧⌘{BS} 已失效（override 生效，rail 状态不变）")
+                fail(f"old default {default_text} still toggles the rail after rebind: {aria1!r} -> {aria2!r}")
+            print(f"[5b] 旧默认 {default_text} 已失效（override 生效，rail 状态不变）")
 
             # --- 持久化：重载后仍在 ---
             page.goto(f"{base_url}/settings/keyboard", wait_until="domcontentloaded")
@@ -212,7 +244,7 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
             # 等设置页录制按钮回到默认组合，确认客户端已应用 Reset（避免带着旧 override 离开本页）
             restored_label = current_shortcut_label(page)
             end = time.monotonic() + 8
-            while (restored_label is None or "⇧" not in restored_label) and time.monotonic() < end:
+            while (restored_label is None or default_marker not in restored_label) and time.monotonic() < end:
                 page.wait_for_timeout(250)
                 restored_label = current_shortcut_label(page)
             print(f"[7/7] Reset all 后服务器 overrides 已清空，录制按钮恢复: {restored_label!r}")
@@ -228,7 +260,7 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
             end = time.monotonic() + 8
             while time.monotonic() < end:
                 r0 = toggle.get_attribute("aria-label")
-                press_chord(page, meta=True, alt=False, shift=True)
+                press_chord(page, mod_key, alt=False, shift=True)
                 page.wait_for_timeout(450)
                 r1 = toggle.get_attribute("aria-label")
                 if ("Collapse" in (r0 or "")) != ("Collapse" in (r1 or "")):
@@ -237,7 +269,7 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
             if not flipped:
                 fail(f"default chord not restored after Reset all (no flip): {r0!r} -> {r1!r}")
             # 新组合应已失效
-            press_chord(page, meta=True, alt=True, shift=False)
+            press_chord(page, mod_key, alt=True, shift=False)
             page.wait_for_timeout(450)
             r2 = toggle.get_attribute("aria-label")
             if ("Collapse" in (r1 or "")) != ("Collapse" in (r2 or "")):
@@ -257,15 +289,30 @@ def run(base_url: str, command: str = "sidebar.railToggle") -> int:
                     page.wait_for_timeout(1500)
             except Exception:
                 pass
+            if trace_dir:
+                if sys.exc_info()[0] is not None:
+                    # 失败路径：trace 连同清理过程一并落盘，供 CI artifact 上传。
+                    os.makedirs(trace_dir, exist_ok=True)
+                    trace_path = os.path.join(trace_dir, "rebind-trace.zip")
+                    context.tracing.stop(path=trace_path)
+                    print(f"trace saved: {trace_path}", file=sys.stderr)
+                else:
+                    context.tracing.stop()
             browser.close()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="http://127.0.0.1:18154")
+    parser.add_argument(
+        "--trace-dir",
+        dest="trace_dir",
+        default=None,
+        help="enable Playwright tracing; on failure save rebind-trace.zip here",
+    )
     args = parser.parse_args()
     try:
-        return run(args.url)
+        return run(args.url, trace_dir=args.trace_dir)
     except PlaywrightTimeoutError as exc:
         print(f"FAIL: playwright timeout — {exc}", file=sys.stderr)
         return 1
