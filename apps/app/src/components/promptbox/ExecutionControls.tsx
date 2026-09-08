@@ -12,6 +12,11 @@ import {
 import { type PickerOption } from "@/components/pickers/OptionPicker";
 import type { ModelPickerOption } from "@/components/pickers/model-picker-option";
 import type { ProviderPickerOption } from "@/components/pickers/model-brand-prefix";
+import { Switch } from "@bb/shared-ui/switch";
+import {
+  usePromptBoxRecentlyUsedModels,
+  usePromptBoxShowVerifiedModelsPreference,
+} from "@/hooks/thread-creation-options/persisted-selection-fields";
 
 interface ExecutionProviderConfig {
   options?: readonly ProviderPickerOption[];
@@ -72,6 +77,9 @@ export const ExecutionControls = memo(function ExecutionControls({
   disabled,
 }: ExecutionControlsProps) {
   const handleServiceTierChange = serviceTier?.onChange ?? (() => {});
+  const { value: showOnlyVerified, setValue: setShowOnlyVerified } =
+    usePromptBoxShowVerifiedModelsPreference();
+  const { value: recentlyUsedModels } = usePromptBoxRecentlyUsedModels();
   const selectedProviderId = provider.selectedId ?? "";
 
   const canSwitchProviders = Boolean(
@@ -88,37 +96,77 @@ export const ExecutionControls = memo(function ExecutionControls({
     selectedProviderId.length > 0 ||
     footerAction !== undefined;
 
+  // 已验证 = Provider 推荐(isDefault) 或 近期成功使用过 或 已知可用清单（仅本地可用的 OpenCode/NVIDIA）
+  const KNOWN_GOOD_MODELS = new Set([
+    "opencode/big-pickle",
+    "opencode/muse-spark-1.3-contributor-free",
+    "opencode/muse-spark-1.2-contributor-free",
+    "opencode/nemotron-3.5-lightning-free",
+    "nvidia/minimaxai/minimax-m3",
+    "nvidia/minimaxai/minimax-m2.7",
+    "nvidia/nvidia/nemotron-3-nano-30b-a3b",
+    "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+    "nvidia/meta/llama-3.1-70b-instruct",
+    "nvidia/meta/llama-3.1-8b-instruct",
+    "nvidia/moonshotai/kimi-k3",
+    "nvidia/deepseek-ai/deepseek-v4-pro",
+  ]);
+  const isVerified = (m: { value: string; isDefault?: boolean }) =>
+    !!m.isDefault || recentlyUsedModels.includes(m.value) || KNOWN_GOOD_MODELS.has(m.value);
+  const verifiedCount = model.options.filter(isVerified).length;
+  const filteredModelOptions = showOnlyVerified
+    ? model.options.filter(isVerified)
+    : model.options;
+  const filteredMoreModelOptions = showOnlyVerified
+    ? model.moreOptions.filter(isVerified)
+    : model.moreOptions;
+
   return (
     <>
       {showModelPicker ? (
-        <ModelReasoningPicker
-          providerOptions={provider.options ?? []}
-          providerRouting={providerRouting}
-          selectedProviderId={selectedProviderId}
-          onSelectedProviderChange={provider.onChange}
-          hasMultipleProviders={provider.hasMultiple ?? false}
-          modelValue={model.active?.model ?? model.selected}
-          modelOptions={model.options}
-          moreModelOptions={model.moreOptions}
-          modelIsLoading={model.isLoading}
-          modelLoadFailed={model.loadFailed}
-          modelLoadError={model.loadError}
-          onModelChange={model.onChange}
-          formatModelLabel={formatModelLabel}
-          reasoningValue={reasoning.value}
-          reasoningOptions={reasoning.options}
-          onReasoningChange={reasoning.onChange}
-          fastModeEnabled={serviceTier?.value === "fast"}
-          onFastModeChange={(enabled) =>
-            handleServiceTierChange(enabled ? "fast" : "default")
-          }
-          showFastModeToggle={serviceTier?.supported ?? false}
-          serviceTierSupportByProvider={serviceTier?.supportByProvider}
-          fastModeLabel={serviceTier?.fastLabel}
-          muted
-          disabled={disabled}
-          footerAction={footerAction}
-        />
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2 px-2 py-1">
+            <span className="text-xs text-muted-foreground">
+              模型 {showOnlyVerified ? `(${verifiedCount} 已验证)` : `(${model.options.length} 全部)`}
+            </span>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+              <span>仅显示已验证</span>
+              <Switch
+                checked={showOnlyVerified}
+                onCheckedChange={setShowOnlyVerified}
+                aria-label="仅显示已验证模型"
+              />
+            </label>
+          </div>
+          <ModelReasoningPicker
+            providerOptions={provider.options ?? []}
+            providerRouting={providerRouting}
+            selectedProviderId={selectedProviderId}
+            onSelectedProviderChange={provider.onChange}
+            hasMultipleProviders={provider.hasMultiple ?? false}
+            modelValue={model.active?.model ?? model.selected}
+            modelOptions={filteredModelOptions}
+            moreModelOptions={filteredMoreModelOptions}
+            modelIsLoading={model.isLoading}
+            modelLoadFailed={model.loadFailed}
+            modelLoadError={model.loadError}
+            onModelChange={model.onChange}
+            formatModelLabel={formatModelLabel}
+            reasoningValue={reasoning.value}
+            reasoningOptions={reasoning.options}
+            onReasoningChange={reasoning.onChange}
+            fastModeEnabled={serviceTier?.value === "fast"}
+            onFastModeChange={(enabled) =>
+              handleServiceTierChange(enabled ? "fast" : "default")
+            }
+            showFastModeToggle={serviceTier?.supported ?? false}
+            serviceTierSupportByProvider={serviceTier?.supportByProvider}
+            fastModeLabel={serviceTier?.fastLabel}
+            muted
+            disabled={disabled}
+            footerAction={footerAction}
+          />
+        </div>
       ) : null}
     </>
   );

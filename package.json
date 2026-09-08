@@ -51,7 +51,9 @@
     "drizzle-studio:prod": "cross-env NODE_ENV=production pnpm --filter @bb/db db:studio",
     "test:dshell:snapshot": "python3 scripts/dshell-skin-snapshot.py --check",
     "test:dshell:snapshot:update": "python3 scripts/dshell-skin-snapshot.py --update",
-    "test:dshell:snapshot:gallery": "python3 scripts/dshell-skin-snapshot.py --gallery"
+    "test:dshell:snapshot:gallery": "python3 scripts/dshell-skin-snapshot.py --gallery",
+    "test:dshell:contrast": "python3 scripts/dshell_contrast_audit.py",
+    "check:plugin-icons": "node --conditions=source --import tsx apps/app/scripts/check-plugin-icons.ts"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "4.1.1",

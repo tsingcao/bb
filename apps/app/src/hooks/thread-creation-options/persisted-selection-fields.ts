@@ -16,7 +16,53 @@ const REASONING_STORAGE_KEY = "bb.promptbox.reasoning";
 const PERMISSION_MODE_STORAGE_KEY = "bb.promptbox.permission-mode";
 const ENVIRONMENT_STORAGE_KEY = "bb.promptbox.environment";
 const PROVIDER_STORAGE_KEY = "bb.promptbox.provider";
+const SHOW_VERIFIED_MODELS_STORAGE_KEY = "bb.promptbox.show-verified-models";
+const RECENTLY_USED_MODELS_STORAGE_KEY = "bb.promptbox.recently-used-models";
 const PROVIDER_SELECTION_STORAGE_VERSION = "1";
+
+const showVerifiedModelsAtom = atomWithStorage<boolean>(
+  SHOW_VERIFIED_MODELS_STORAGE_KEY,
+  false,
+  createLocalStorageSyncStorage({
+    parse: (storedValue, initialValue) => {
+      if (storedValue === null || storedValue === undefined) return initialValue;
+      return storedValue === "true";
+    },
+    serialize: (value) => (value ? "true" : "false"),
+  }),
+  { getOnInit: true },
+);
+
+const recentlyUsedModelsAtom = atomWithStorage<string[]>(
+  RECENTLY_USED_MODELS_STORAGE_KEY,
+  [],
+  createLocalStorageSyncStorage({
+    parse: (storedValue, initialValue) => {
+      if (!storedValue) return initialValue;
+      try {
+        return JSON.parse(storedValue);
+      } catch {
+        return initialValue;
+      }
+    },
+    serialize: (value) => JSON.stringify(value),
+  }),
+  { getOnInit: true },
+);
+
+export function usePromptBoxShowVerifiedModelsPreference(): {
+  value: boolean;
+  setValue: (value: boolean) => void;
+} {
+  const [value, setAtomValue] = useAtom(showVerifiedModelsAtom);
+  const setValue = useCallback(
+    (nextValue: boolean) => {
+      setAtomValue(nextValue);
+    },
+    [setAtomValue],
+  );
+  return { setValue, value };
+}
 
 export type StoredServiceTier = "" | ServiceTier;
 export type StoredReasoningLevel = "" | ReasoningLevel;
@@ -292,4 +338,21 @@ export function usePromptBoxEnvironmentPreference(
     [setAtomValue],
   );
   return { setValue, value };
+}
+
+export function usePromptBoxRecentlyUsedModels(): {
+  value: string[];
+  add: (modelId: string) => void;
+} {
+  const [value, setAtomValue] = useAtom(recentlyUsedModelsAtom);
+  const add = useCallback(
+    (modelId: string) => {
+      setAtomValue((prev) => {
+        const filtered = prev.filter((id) => id !== modelId);
+        return [modelId, ...filtered].slice(0, 20);
+      });
+    },
+    [setAtomValue],
+  );
+  return { value, add };
 }

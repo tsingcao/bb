@@ -92,6 +92,9 @@ provider-recordings/raw/
 !apps/server/test/provider-corpus/**
 !scripts/provider-corpus/**
 
+# dshell 快照回归诊断产物（FAIL 时生成的双图并排 + 差异热区，可再生成）
+docs/dshell-skin-shots/auto/.diff/
+
 # dev-runner 运行时产物（longrun 检查点 / 模型验证结果，非源码）
 .bb/longrun/
 .bb/verified-models*.json

@@ -3,6 +3,8 @@
 
 用法:
   python3 scripts/dshell-skin-snapshot.py [--check|--update] [--gallery] [--scene NAME] [--url http://127.0.0.1:18154]
+  python3 scripts/dshell-skin-snapshot.py --inject-regression <glass-removed|duration-fixed|ring-removed>
+        （故障注入自检：破坏皮肤契约，验证套件能探测；exit 0=探测成功）
 
 - 默认 --check：把当前渲染与 docs/dshell-skin-shots/auto/ 基线比对（区域像素 diff +
   终端画布颜色断言），回归时输出 .diff 报告并返回非 0。
@@ -131,11 +133,49 @@ PASS = 0
 FAIL_REGRESSION = 1
 FAIL_MISSING = 2
 
+# --inject-regression 故障注入自检：故意破坏皮肤层某一契约，验证回归套件能探测到。
+# 每个模式 = { css: 注入到页面的破坏性样式, scene: 推荐探测器场景, expect: 探测判定
+# 子串, desc }。运行方式：--inject-regression <mode> [--scene <探测器场景>]，不传
+# --scene 时用每模式的默认场景（glass-removed/duration-fixed → glass_anim 帧采样，
+# ring-removed → glass_tab_info 的 check_skin_identity 令牌断言）。
+# CI 对三个模式各跑一次，期望 exit 0 = 注入被正确探测（harness 有效）；
+# exit 1 = 未被探测（harness 失效）；exit 2 = 环境错误（基线缺失等）。
+INJECTIONS: dict[str, dict] = {
+    "glass-removed": {
+        "css": (
+            "html.dshell [data-panel-id^=\"thread-detail-secondary-panel\"] {\n"
+            "  -webkit-backdrop-filter: none !important;\n"
+            "  backdrop-filter: none !important;\n"
+            "}\n"
+        ),
+        "scene": "glass_anim",
+        "expect": ("blur", "backdrop"),
+        "desc": "面板毛玻璃（§11 backdrop blur）被移除",
+    },
+    "duration-fixed": {
+        "css": (
+            "html.dshell [data-panel-id^=\"thread-detail-secondary-panel\"] {\n"
+            "  transition-duration: 0.5s !important;\n"
+            "}\n"
+        ),
+        "scene": "glass_anim",
+        "expect": ("未跟随",),
+        "desc": "面板过渡时长被写死，不再跟随 --panel-collapse-duration",
+    },
+    "ring-removed": {
+        "css": "html.dshell { --ring: transparent !important; }\n",
+        "scene": "glass_tab_info",
+        "expect": ("--ring",),
+        "desc": "焦点环令牌 --ring 被移除",
+    },
+}
+
 failures: list[str] = []
 skips: list[str] = []
 missing_baselines: list[str] = []
 UPDATE_MODE = False
 GALLERY_MODE = False
+INJECT_MODE = ""
 AUDIT: dict = {}          # scene → {theme, chromeBg, contentBg, contrast, pixels, …}，写 audit.json
 CONSOLE_ERRORS: list[str] = []
 CONSOLE_NOISE = ("css", "plugin", "jotai", "loadable", "deprecat")
@@ -198,6 +238,11 @@ def compare_region(scene: str, region: str, shot: Path) -> None:
         shot.replace(baseline)
         log(f"  [WRITE] {scene}/{region}")
         return
+    if INJECT_MODE:
+        # 故障注入自检只关心确定性功能断言（帧采样/令牌），像素比对对注入
+        # 场景必然整体失败且会写 .diff —— 跳过，避免污染 auto/.diff 与基线 cache。
+        log(f"  [INJECT] {scene}/{region}（注入模式，跳过像素比对）")
+        return
     if not baseline.exists():
         missing_baselines.append(f"{scene}/{region}: 基线缺失 {baseline.name}（用 --update 校准）")
         return
@@ -240,6 +285,7 @@ def check_skin_identity(page, theme: str, scene: str) -> None:
           return {
             dshell: document.documentElement.classList.contains("dshell"),
             termBg: cs.getPropertyValue("--dsh-term-bg").trim(),
+            ring: cs.getPropertyValue("--ring").trim(),
             panelBlur: rc ? rc.backdropFilter : null,
             panelTrans: rc ? rc.transitionProperty : null,
             panelDur: rc ? rc.transitionDuration.split(",")[0].trim() : null,
@@ -262,7 +308,12 @@ def check_skin_identity(page, theme: str, scene: str) -> None:
     if theme == "dark" and info["termBg"] == "":
         failures.append(f"{scene}: --dsh-term-bg 未解析")
         ok = False
-    log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/identity  dshell={info['dshell']} panelBlur={info['panelBlur']} dur={info['panelDur']}")
+    if not info["ring"] or info["ring"] == "transparent":
+        # 焦点环令牌（第 3 段 --ring: var(--dsh-cyan-soft)）被摘/失效 → 皮肤环回归。
+        # 这也是 --inject-regression ring-removed 的探测器。
+        failures.append(f"{scene}: 焦点环令牌 --ring 失效（{info['ring']!r}）")
+        ok = False
+    log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/identity  dshell={info['dshell']} panelBlur={info['panelBlur']} dur={info['panelDur']} ring={info['ring']}")
 
 
 def gallery_capture(page, gallery_name: str, panel_rect: dict | None = None) -> None:
@@ -1206,6 +1257,27 @@ class PlaywrightSession:
         self._browser = self._pw.chromium.launch()
         self.page = self._browser.new_page(viewport={"width": 1920, "height": 1000})
         self.page.set_default_timeout(30000)
+        if INJECT_MODE:
+            # 故障注入：init script 在每个文档执行前把破坏性 CSS 插成 <style> 元素
+            # （覆盖页面样式表，且跨导航持续生效）。踩过的坑：直接吃 CSS 文本不是
+            # 合法 JS 会静默报错；裸箭头函数只是定义不执行；init script 阶段
+            # document.head/documentElement 都不存在 → 用 MutationObserver 等 head
+            # 出现再插（!important 保证晚于页面样式仍胜出）。只有本会话的页面被
+            # 注入，不影响其它场景。
+            css_js = f"""(() => {{
+  const css = {INJECTIONS[INJECT_MODE]['css']!r};
+  const inject = () => {{
+    if (!document.head) return false;
+    const s = document.createElement('style');
+    s.textContent = css;
+    document.head.appendChild(s);
+    return true;
+  }};
+  if (inject()) return;
+  const mo = new MutationObserver(() => {{ if (inject()) mo.disconnect(); }});
+  mo.observe(document, {{ childList: true, subtree: true }});
+}})();"""
+            self.page.add_init_script(css_js)
         # console 错误收集（噪声过滤），汇总进 audit.json——与 ad-hoc 审计脚本同款过滤
         self.page.on(
             "console",
@@ -1234,12 +1306,34 @@ def main() -> int:
     parser.add_argument("--gallery", action="store_true", help="重拍 docs/dshell-skin-shots 的 gallery PNG + audit.json（不动 auto 基线）")
     parser.add_argument("--ci", action="store_true", help="只跑 CI 场景集（harness 种子下确定性可验证的场景）")
     parser.add_argument("--scene", default=None, help="只跑指定场景前缀")
+    parser.add_argument(
+        "--inject-regression",
+        choices=sorted(INJECTIONS),
+        default=None,
+        help=(
+            "故障注入自检：注入破坏性 CSS 破坏皮肤契约，验证套件能探测。"
+            "期望 exit 0=探测成功（harness 有效）/1=未探测/2=环境错误；"
+            "不传 --scene 时用该模式的默认探测器场景。"
+        ),
+    )
     parser.add_argument("--url", default=BASE)
     args = parser.parse_args()
-    global UPDATE_MODE, GALLERY_MODE
+    global UPDATE_MODE, GALLERY_MODE, INJECT_MODE
     UPDATE_MODE = args.update
     GALLERY_MODE = args.gallery
+    INJECT_MODE = args.inject_regression or ""
     BASE = args.url
+    if INJECT_MODE and (UPDATE_MODE or GALLERY_MODE):
+        log(f"--inject-regression 与 --update/--gallery 互斥（注入会污染基线）")
+        return FAIL_MISSING
+    if INJECT_MODE and args.scene is None:
+        # 模式默认探测器场景（见 INJECTIONS 注释）
+        args.scene = INJECTIONS[INJECT_MODE]["scene"]
+        log(f"--inject-regression {INJECT_MODE}：默认探测器场景 {args.scene}")
+    elif INJECT_MODE:
+        log(f"--inject-regression {INJECT_MODE}：探测器场景 {args.scene}")
+    if INJECT_MODE:
+        log(f"故障注入：{INJECTIONS[INJECT_MODE]['desc']}")
 
     AUTO_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -1322,6 +1416,27 @@ def main() -> int:
         log(f"console 错误 {len(CONSOLE_ERRORS)} 条（噪声已过滤）：")
         for e in CONSOLE_ERRORS[:5]:
             log(f"  • {e[:160]}")
+    if INJECT_MODE:
+        # 故障注入自检的判定与普通 --check 相反：期待探测到注入的回归。
+        if missing_baselines:
+            for f in missing_baselines:
+                log(f"  MISSING {f}")
+            log(f"[INJECT] 基线缺失 → 环境错误（exit {FAIL_MISSING}）")
+            return FAIL_MISSING
+        expected = INJECTIONS[INJECT_MODE]["expect"]
+        found = {e: any(e in f for f in failures) for e in expected}
+        if all(found.values()):
+            log(f"[INJECT] 自检通过：注入的回归被套件探测（{INJECTIONS[INJECT_MODE]['desc']}）")
+            for e, hit in found.items():
+                log(f"  ✓ expect {e!r}: {'命中' if hit else '未命中'}")
+            return PASS
+        log(f"[INJECT] 自检失败：注入未被套件探测（{INJECTIONS[INJECT_MODE]['desc']}）")
+        for e, hit in found.items():
+            log(f"  ✗ expect {e!r}: {'命中' if hit else '未命中'}")
+        log("  实际失败条目：")
+        for f in failures:
+            log(f"    FAIL {f}")
+        return FAIL_REGRESSION
     if not args.update:
         for f in missing_baselines:
             log(f"  MISSING {f}")

@@ -1,0 +1,158 @@
+From 31098cb99bfc655bca880eb4d054a2d9207dac35 Mon Sep 17 00:00:00 2001
+From: tsing <tsingcao@gmail.com>
+Date: Sun, 6 Sep 2026 17:48:24 +1200
+Subject: [PATCH 4/5] =?UTF-8?q?feat(dshell):=20=E8=B7=A8=E6=A0=87=E7=AD=BE?=
+ =?UTF-8?q?=E9=A1=B5=E5=90=8C=E6=AD=A5=E8=A1=A5=E9=BD=90=20active=20?=
+ =?UTF-8?q?=E9=80=9A=E7=9F=A5=E5=B9=B6=E8=A1=A5=20storage=20=E4=BA=8B?=
+ =?UTF-8?q?=E4=BB=B6=E6=B5=8B=E8=AF=95?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+storage 事件同步此前只通知 mode 订阅者，生效态翻转不通知 active 订阅者
+（与 setDshellMode 不一致）——其它标签页改档位后本页设置卡等 UI 停留旧档位。
+修复为与 setDshellMode 同构：档位变更通知 mode 订阅者，生效态翻转额外
+notifyActive()。
+
+测试（dshell.test.ts 新 describe「跨标签页同步」，+3）：
+- 其它标签页改档位：档位/类/生效态同步，mode 与 active 订阅者都收到通知；
+- storage 事件路径迁移旧布尔值：1/true→on、0/false→off（与启动路径一致）；
+- 忽略非本键、键被删除（newValue=null）、同档位 no-op（无通知）。
+
+验证：dshell 四套件 34/34（DshellAppearanceSetting 消费 active 订阅不受影响），
+tsc 干净。
+---
+ apps/app/src/lib/dshell.test.ts | 87 ++++++++++++++++++++++++++++++++-
+ apps/app/src/lib/dshell.ts      |  5 +-
+ 2 files changed, 90 insertions(+), 2 deletions(-)
+
+diff --git a/apps/app/src/lib/dshell.test.ts b/apps/app/src/lib/dshell.test.ts
+index 6881a3d82..57c19bb92 100644
+--- a/apps/app/src/lib/dshell.test.ts
++++ b/apps/app/src/lib/dshell.test.ts
+@@ -7,7 +7,9 @@
+ //      同档 no-op 与非法档位拒绝写盘；
+ //   4. 档位解析——存储的 on/off/auto 启动即落到对应档位；
+ //   5. 监听通知——mode/active 订阅在档位变更与生效态翻转时收到通知；
+-//   6. auto 跟随外观——<html> 的 .dark 类变化经 MutationObserver 即时翻转。
++//   6. auto 跟随外观——<html> 的 .dark 类变化经 MutationObserver 即时翻转；
++//   7. 跨标签页同步——storage 事件把其它标签页的档位/生效态同步过来，
++//      旧布尔值（"1"/"0"）同样在事件路径迁移。
+ // dshell.ts 是模块级单例（import 时读 localStorage 并 applyDshellClass），
+ // 每个用例 vi.resetModules() + 动态 import 模拟一次全新启动。
+ //
+@@ -272,3 +274,86 @@ describe("lib/dshell opt-in 契约", () => {
+     expect(listener).toHaveBeenCalledTimes(2);
+   });
+ });
++
++describe("lib/dshell 跨标签页同步（storage 事件）", () => {
++  beforeEach(() => {
++    window.localStorage.clear();
++    document.documentElement.classList.remove("dshell", "dark", "light");
++    vi.restoreAllMocks();
++  });
++
++  afterEach(() => {
++    vi.restoreAllMocks();
++    restoreMatchMedia();
++  });
++
++  /** 模拟其它标签页写入 bb.dshell.enabled 后当前页收到的 storage 事件。 */
++  function storageEventFromOtherTab(newValue: string | null, key = KEY) {
++    window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
++  }
++
++  it("其它标签页改档位：档位/类/生效态同步，mode 与 active 订阅者都收到通知", async () => {
++    const mod = await boot("off");
++    const modeListener = vi.fn();
++    const activeListener = vi.fn();
++    mod.subscribeDshellMode(modeListener);
++    mod.subscribeDshellActive(activeListener);
++
++    expect(mod.getDshellMode()).toBe("off");
++    expect(mod.isDshellActive()).toBe(false);
++    expect(document.documentElement.classList.contains("dshell")).toBe(false);
++
++    storageEventFromOtherTab("on");
++    expect(mod.getDshellMode()).toBe("on");
++    expect(mod.isDshellActive()).toBe(true);
++    expect(document.documentElement.classList.contains("dshell")).toBe(true);
++    expect(modeListener).toHaveBeenCalledTimes(1);
++    expect(activeListener).toHaveBeenCalledTimes(1);
++
++    // 切回 off：生效态翻转 → active 订阅者再通知一次
++    storageEventFromOtherTab("off");
++    expect(mod.getDshellMode()).toBe("off");
++    expect(document.documentElement.classList.contains("dshell")).toBe(false);
++    expect(modeListener).toHaveBeenCalledTimes(2);
++    expect(activeListener).toHaveBeenCalledTimes(2);
++  });
++
++  it("storage 事件迁移旧布尔值：1/true → on，0/false → off（事件路径同启动路径）", async () => {
++    const mod = await boot("off");
++
++    storageEventFromOtherTab("1");
++    expect(mod.getDshellMode()).toBe("on");
++    expect(mod.isDshellActive()).toBe(true);
++    expect(document.documentElement.classList.contains("dshell")).toBe(true);
++
++    storageEventFromOtherTab("0");
++    expect(mod.getDshellMode()).toBe("off");
++    expect(document.documentElement.classList.contains("dshell")).toBe(false);
++
++    storageEventFromOtherTab("true");
++    expect(mod.getDshellMode()).toBe("on");
++
++    storageEventFromOtherTab("false");
++    expect(mod.getDshellMode()).toBe("off");
++  });
++
++  it("storage 事件忽略非本键、键被删除（newValue=null）与同档位 no-op", async () => {
++    const mod = await boot("auto");
++    const modeListener = vi.fn();
++    mod.subscribeDshellMode(modeListener);
++
++    // 非本键
++    storageEventFromOtherTab("on", "some.other.key");
++    expect(mod.getDshellMode()).toBe("auto");
++
++    // 键被删除
++    storageEventFromOtherTab(null);
++    expect(mod.getDshellMode()).toBe("auto");
++
++    // 同档位 no-op
++    storageEventFromOtherTab("auto");
++    expect(mod.getDshellMode()).toBe("auto");
++
++    expect(modeListener).not.toHaveBeenCalled();
++  });
++});
+diff --git a/apps/app/src/lib/dshell.ts b/apps/app/src/lib/dshell.ts
+index 47c253237..57316ecb5 100644
+--- a/apps/app/src/lib/dshell.ts
++++ b/apps/app/src/lib/dshell.ts
+@@ -172,7 +172,8 @@ if (typeof document !== "undefined" && typeof MutationObserver !== "undefined")
+   }
+ }
+ 
+-// 其他标签页改档位时同步到当前页。
++// 其他标签页改档位时同步到当前页：档位 + 生效态都对齐（与 setDshellMode 同构，
++// 生效态翻转也通知 active 订阅者，否则设置卡等 UI 会停留在旧档位）。
+ if (typeof window !== "undefined") {
+   window.addEventListener("storage", (event) => {
+     if (event.key !== DSHELL_STORAGE_KEY) return;
+@@ -180,8 +181,10 @@ if (typeof window !== "undefined") {
+     if (raw === null) return;
+     const next = isDshellMode(raw) ? raw : raw === "1" || raw === "true" ? "on" : "off";
+     if (next === dshellMode) return;
++    const prevActive = lastAppliedActive;
+     dshellMode = next;
+     applyDshellClass();
+     for (const listener of modeListeners) listener();
++    if (prevActive !== lastAppliedActive) notifyActive();
+   });
+ }
+-- 
+2.54.0 (Apple Git-157)
+

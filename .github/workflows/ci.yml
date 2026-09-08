@@ -5,6 +5,12 @@ on:
     branches:
       - main
   pull_request:
+    # 纯文档改动不需要跑 build/typecheck/lint/8 个测试分片。代码变更永远跑：
+    # push 到 main 不设过滤，合并后的推送兜底。注：皮肤基线在 docs/ 下，
+    # 基线重拍 PR 也会跳过本工作流（代码没变），由 dshell-skin-snapshot 门覆盖。
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 env:
@@ -76,6 +82,15 @@ jobs:
       - name: Check app bundle budgets
         run: node apps/app/scripts/check-bundle-budget.mjs
 
+      # Shipped-plugin icon gate: every declared bb.branding.icon must resolve
+      # to a real icon (native ICON_NAMES or the shared PLUGIN_ICON_ALIASES
+      # registry) — a resolution falling back to the Zap placeholder fails CI
+      # and names the plugin + icon. Resolution shares the single implementation
+      # with the app (resolvePluginIconName), so the check can't drift from
+      # what PluginIcon actually renders.
+      - name: Check plugin icons resolve (no Zap fallback)
+        run: pnpm run check:plugin-icons
+
       # Provider-literal ratchet (G1 of the provider-plugin migration):
       # core must never gain a new provider-id carve-out; the per-file
       # baseline may only shrink. See docs/provider-plugin-api.md.
@@ -120,6 +135,13 @@ jobs:
           - shard: app-3
             filter: --filter=@bb/app
             args: -- --shard=3/3
+          # dshell 皮肤契约单测 gate：8 个套件（dshell lib 三态/迁移/性能护栏 +
+          # 设置卡 + sidebar rail），独立于 dshell-skin-snapshot 工作流跑，分支 PR
+          # 不依赖快照 workflow 也强制过；任务声明见 turbo.json test:dshell:unit。
+          - shard: dshell-unit
+            filter: --filter=@bb/app
+            task: test:dshell:unit
+            args: ""
           - shard: integration
             filter: --filter=@bb/integration-tests
             args: ""
@@ -139,7 +161,7 @@ jobs:
           cache-prefix: test-${{ matrix.shard }}
 
       - name: Test
-        run: pnpm exec turbo run test ${{ matrix.filter }} --cache-dir=.turbo/cache --output-logs=new-only --concurrency=4 ${{ matrix.args }}
+        run: pnpm exec turbo run ${{ matrix.task || 'test' }} ${{ matrix.filter }} --cache-dir=.turbo/cache --output-logs=new-only --concurrency=4 ${{ matrix.args }}
 
   # The macOS legs run without the Turbo cache. Blacksmith's transparent cache
   # only backs their Linux runners, so on macOS the cache moves over GitHub's

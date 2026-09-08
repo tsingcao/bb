@@ -369,6 +369,39 @@ describe("lib/dshell 跨标签页同步（storage 事件）", () => {
     expect(mod.getDshellMode()).toBe("off");
   });
 
+  it("storage 事件未知字符串按旧布尔回退走 off，不与 auto 解析混淆（边界）", async () => {
+    // 从非 off 档起步，验证未知值能真正触发翻转（而非同档 no-op 掩盖回退）。
+    const mod = await boot("on");
+    const modeListener = vi.fn();
+    const activeListener = vi.fn();
+    mod.subscribeDshellMode(modeListener);
+    mod.subscribeDshellActive(activeListener);
+    expect(mod.getDshellMode()).toBe("on");
+    expect(mod.isDshellActive()).toBe(true);
+
+    // 未知字符串（如 "maybe"）走旧布尔回退：非 "1"/"true" → off；
+    // 绝不解析成 auto（auto 只能由合法字符串或暗色首见 seed 产生）。
+    storageEventFromOtherTab("maybe");
+    expect(mod.getDshellMode()).toBe("off");
+    expect(mod.isDshellActive()).toBe(false);
+    expect(document.documentElement.classList.contains("dshell")).toBe(false);
+    expect(modeListener).toHaveBeenCalledTimes(1);
+    expect(activeListener).toHaveBeenCalledTimes(1); // on→off 生效态翻转
+
+    // 其它未知值同路径回退 off，且都不是 auto。
+    for (const v of ["banana", "OFF", "truee", ""]) {
+      storageEventFromOtherTab(v);
+      expect(mod.getDshellMode(), `unknown=${JSON.stringify(v)}`).toBe("off");
+      expect(mod.getDshellMode()).not.toBe("auto");
+      expect(modeListener).toHaveBeenCalledTimes(1); // off→off 同档 no-op
+    }
+
+    // 与 auto 解析对照：合法 "auto" 仍正确落到 auto，未被回退路径吞掉。
+    storageEventFromOtherTab("auto");
+    expect(mod.getDshellMode()).toBe("auto");
+    expect(modeListener).toHaveBeenCalledTimes(2);
+  });
+
   it("storage 事件忽略非本键、键被删除（newValue=null）与同档位 no-op", async () => {
     const mod = await boot("auto");
     const modeListener = vi.fn();

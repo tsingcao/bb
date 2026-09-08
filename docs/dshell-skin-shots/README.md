@@ -128,3 +128,38 @@ python3 scripts/dshell-skin-snapshot.py --check --ci
   注入一处颜色改动（如 `--dsh-grid` 改红），`--check` 必须 FAIL(1) 并产出 `.diff.png`，
   随后还原。注意皮肤现为 opt-in（默认 OFF），快照脚本内部固定写入 `on`/`off`/`auto`
   偏好再整页 reload，与真实用户首启行为一致。
+
+## 对比度审计 + 元素覆盖快照（CI 可用）
+
+`scripts/dshell_contrast_audit.py` 用同一 harness/playwright 跑 8 个确定性主表面场景
+（home×2 / settings×2 / rail 三态 / migration banner×2）的 computed-style WCAG 断言
+（普通文本 ≥4.5:1、大号 ≥3.0:1），补像素快照管不到的「玻璃化后文字可读」。
+
+```bash
+pnpm test:dshell:contrast               # 全场景 + 元素覆盖基线对比（本地 = CI 同一入口）
+pnpm test:dshell:contrast --scene rail  # 只看 rail 前缀（局部审计，跳过基线对比）
+pnpm test:dshell:contrast --url http://127.0.0.1:18154   # 非默认实例
+pnpm test:dshell:contrast --json -      # 汇总 JSON 打 stdout（每场景元素/失败/比率直方图）
+pnpm test:dshell:contrast --json out.json  # 汇总写文件（红绿都写，作审计合规表记录）
+```
+
+- 汇总 JSON 合规表（schema 2）：每次审计累计全部文本节点的对比度比率直方图
+  （WCAG 分桶 `<3` / `3-4.5` / `4.5-7` / `>=7`），与每场景 elements/failures 一起
+  经 `--json` 导出（`-` = stdout；红绿都写）。`contrast-summary.json` 基线同 schema，
+  可直接 diff 历史版本看分布漂移。
+- 排除清单审计账：每场景打印 `skipped tooltip/svg/term/input/hidden/small/offscreen`
+  计数，被 SKIP 规则排除的每个文本节点都记账 —— 终端/输入是设计上不属皮肤断言
+  范围；`svg` 与 `tooltip` 计数受场景断言约束（见下），不能无声增长。
+- 场景契约断言（防真实表面被排除规则吞掉）：`rail_peek` 必须比 `rail_icon` 多审计
+  ≥3 个文本元素（peek 浮层恢复的行标签是真实交互表面——被 `[role=tooltip]` 之类
+  规则排除会让差距消失即红）；任何场景 `skipped.svg > 0`（图标/徽章里藏文字）或
+  `skipped.tooltip > 0`（静态场景上开着瞬时提示）即红，附具体场景与原因。
+- 元素覆盖快照：每次全量审计把每场景 elements/failures 与仓库基线
+  `docs/dshell-skin-shots/contrast-summary.json` 对比 —— 基线里某场景本次未审计
+  （SCENES 被删/改名）或 elements < 基线（文本节点变少）即 rc1；新场景只提示
+  （`--update-snapshot` 纳入基线）。防止元素覆盖率悄悄下滑。
+- 刷新基线：`pnpm test:dshell:contrast --update-snapshot`（需全量绿跑：0 失败且每场景
+  ≥1 元素；失败/零元素状态拒绝写入）。基线与像素基线同纪律：harness 种子下生成并提交，
+  CI dispatch `refresh-dshell-baselines=true` 时一并重拍并上传 artifact。
+- 退出码：0 全绿（≥1 元素、0 失败、覆盖无下滑）/ 1 对比度失败、场景加载失败或覆盖下滑
+  / 2 用法/IO 错误。`--no-snapshot-check` 跳过对比（对非 harness 实例做临时审计时用）。

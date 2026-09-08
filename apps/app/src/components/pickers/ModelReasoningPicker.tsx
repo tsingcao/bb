@@ -45,6 +45,9 @@ import {
 import { cn } from "@bb/shared-ui/lib/utils";
 import { useSystemExecutionOptions } from "@/hooks/queries/system-queries";
 import { resolveModelCatalogSelection } from "@/hooks/thread-creation-options/model-catalog-selection";
+import {
+  usePromptBoxRecentlyUsedModels,
+} from "@/hooks/thread-creation-options/persisted-selection-fields";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import {
   OPTION_BASE_CLASS_NAME,
@@ -249,6 +252,9 @@ export function ModelReasoningPicker({
   const navId = useId();
   const listboxId = `${navId}-listbox`;
   const optionDomId = (index: number) => `${navId}-opt-${index}`;
+
+  const { value: recentlyUsedModels, add: addRecentlyUsedModel } =
+    usePromptBoxRecentlyUsedModels();
 
   const [previewProviderId, setPreviewProviderId] = useState<string | null>(
     null,
@@ -486,6 +492,27 @@ export function ModelReasoningPicker({
     ],
   );
 
+  // 按厂商分组（仅 acp-opencode 且非搜索时）
+  const vendorGroups = useMemo(() => {
+    if (isSearching || activeProviderId !== "acp-opencode") return null;
+    const map = new Map<string, ModelPickerOption[]>();
+    for (const opt of filteredModelOptions) {
+      const raw = opt.value.split("/")[0] || "other";
+      const vendor = raw.toLowerCase();
+      if (!map.has(vendor)) map.set(vendor, []);
+      map.get(vendor)!.push(opt);
+    }
+    const vendorOrder = ["opencode", "nvidia", "openrouter", "teamorouter", "z-ai", "google", "anthropic", "qwen", "moonshotai", "other"];
+    return Array.from(map.entries()).sort((a, b) => {
+      const ia = vendorOrder.indexOf(a[0]);
+      const ib = vendorOrder.indexOf(b[0]);
+      if (ia === -1 && ib === -1) return a[0].localeCompare(b[0]);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  }, [filteredModelOptions, isSearching, activeProviderId]);
+
   const highlightedIndex =
     activeIndex >= 0 && activeIndex < navRows.length ? activeIndex : -1;
 
@@ -533,8 +560,9 @@ export function ModelReasoningPicker({
       onModelChange(model);
       setMoreModelsOpen(false);
       setPreviewProviderId(null);
+      addRecentlyUsedModel(model);
     },
-    [onModelChange, previewSelectionBlocked],
+    [onModelChange, previewSelectionBlocked, addRecentlyUsedModel],
   );
 
   const handleProviderSelect = useCallback(
@@ -966,40 +994,121 @@ export function ModelReasoningPicker({
                 <ModelPickerLoadingRows />
               ) : hasActiveModelOptions ? (
                 <>
-                  {navRows.map((row, index) => {
-                    const active = highlightedIndex === index;
-                    const domId = optionDomId(index);
-                    if (row.kind === "more-toggle") {
-                      return (
-                        <MoreModelsToggleRow
-                          key="more-toggle"
-                          id={domId}
-                          isActive={active}
-                          expanded={showMoreModels}
-                          onToggle={() =>
-                            setShowMoreModels((current) => !current)
-                          }
-                        />
-                      );
-                    }
-                    const option = row.option;
-                    return (
-                      <MenuRowButton
-                        key={option.value}
-                        id={domId}
-                        role={showSearchInput ? "option" : undefined}
-                        isActive={active}
-                        label={stripModelBrandPrefix(
-                          option.label,
-                          activeBrandPrefix,
-                        )}
-                        qualifier={option.routeProviderId}
-                        selected={!isPreviewing && option.value === modelValue}
-                        disabled={previewSelectionBlocked}
-                        onClick={() => handleModelSelect(option.value)}
-                      />
-                    );
-                  })}
+                  {vendorGroups
+                    ? (() => {
+                        let gIdx = 0;
+                        const vendorLabel = (v: string) =>
+                          ({
+                            opencode: "OpenCode（主）",
+                            nvidia: "NVIDIA",
+                            openrouter: "OpenRouter",
+                            teamorouter: "TeamoRouter",
+                            "z-ai": "Z.AI",
+                            google: "Google",
+                            anthropic: "Anthropic",
+                            qwen: "Qwen",
+                            moonshotai: "MoonshotAI",
+                          }[v] || v.toUpperCase());
+                        return vendorGroups.map(([vendor, opts]) => (
+                          <div key={vendor}>
+                            <div className="sticky top-0 z-[1] bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground border-b border-border/50">
+                              {vendorLabel(vendor)} ({opts.length})
+                            </div>
+                            {opts.map((option) => {
+                              const idx = gIdx++;
+                              const active = highlightedIndex === idx;
+                              const domId = optionDomId(idx);
+                              const KNOWN_GOOD = new Set([
+                                "opencode/big-pickle",
+                                "opencode/muse-spark-1.3-contributor-free",
+                                "opencode/muse-spark-1.2-contributor-free",
+                                "opencode/nemotron-3.5-lightning-free",
+                                "nvidia/minimaxai/minimax-m3",
+                                "nvidia/minimaxai/minimax-m2.7",
+                                "nvidia/nvidia/nemotron-3-nano-30b-a3b",
+                                "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+                                "nvidia/meta/llama-3.1-70b-instruct",
+                                "nvidia/meta/llama-3.1-8b-instruct",
+                                "nvidia/moonshotai/kimi-k3",
+                                "nvidia/deepseek-ai/deepseek-v4-pro",
+                              ]);
+                              const badge = option.isDefault
+                                ? { type: "default" as const, label: "推荐" }
+                                : recentlyUsedModels.includes(option.value) || KNOWN_GOOD.has(option.value)
+                                ? { type: "recent" as const, label: KNOWN_GOOD.has(option.value) ? "已验证" : "近期使用" }
+                                : undefined;
+                              return (
+                                <MenuRowButton
+                                  key={option.value}
+                                  id={domId}
+                                  role={showSearchInput ? "option" : undefined}
+                                  isActive={active}
+                                  label={stripModelBrandPrefix(
+                                    option.label,
+                                    activeBrandPrefix,
+                                  )}
+                                  qualifier={option.routeProviderId}
+                                  selected={!isPreviewing && option.value === modelValue}
+                                  disabled={previewSelectionBlocked}
+                                  onClick={() => handleModelSelect(option.value)}
+                                  badge={badge}
+                                />
+                              );
+                            })}
+                            </div>
+                        ));
+                      })()
+                    : navRows.map((row, index) => {
+                        const active = highlightedIndex === index;
+                        const domId = optionDomId(index);
+                        if (row.kind === "more-toggle") {
+                          return (
+                            <MoreModelsToggleRow
+                              key="more-toggle"
+                              id={domId}
+                              isActive={active}
+                              expanded={showMoreModels}
+                              onToggle={() =>
+                                setShowMoreModels((current) => !current)
+                              }
+                            />
+                          );
+                        }
+                        const option = row.option;
+                        const KNOWN_GOOD2 = new Set([
+                          "opencode/big-pickle",
+                          "opencode/muse-spark-1.3-contributor-free",
+                          "opencode/muse-spark-1.2-contributor-free",
+                          "opencode/nemotron-3.5-lightning-free",
+                          "nvidia/minimaxai/minimax-m3",
+                          "nvidia/minimaxai/minimax-m2.7",
+                          "nvidia/nvidia/nemotron-3-nano-30b-a3b",
+                          "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+                          "nvidia/meta/llama-3.1-70b-instruct",
+                          "nvidia/meta/llama-3.1-8b-instruct",
+                          "nvidia/moonshotai/kimi-k3",
+                          "nvidia/deepseek-ai/deepseek-v4-pro",
+                        ]);
+                        const badge2 = option.isDefault
+                          ? { type: "default" as const, label: "推荐" }
+                          : recentlyUsedModels.includes(option.value) || KNOWN_GOOD2.has(option.value)
+                          ? { type: "recent" as const, label: KNOWN_GOOD2.has(option.value) ? "已验证" : "近期使用" }
+                          : undefined;
+                        return (
+                          <MenuRowButton
+                            key={option.value}
+                            id={domId}
+                            role={showSearchInput ? "option" : undefined}
+                            isActive={active}
+                            label={stripModelBrandPrefix(option.label, activeBrandPrefix)}
+                            qualifier={option.routeProviderId}
+                            selected={!isPreviewing && option.value === modelValue}
+                            disabled={previewSelectionBlocked}
+                            onClick={() => handleModelSelect(option.value)}
+                            badge={badge2}
+                          />
+                        );
+                      })}
                   {!isCompactViewport &&
                   !isSearching &&
                   filteredMoreModelOptions.length > 0 ? (
@@ -1012,6 +1121,7 @@ export function ModelReasoningPicker({
                       modelValue={modelValue}
                       options={filteredMoreModelOptions}
                       onSelect={handleModelSelect}
+                      recentlyUsedModels={recentlyUsedModels}
                     />
                   ) : null}
                   {isSearching && navRows.length === 0 ? (
@@ -1209,6 +1319,7 @@ function MoreModelsSubmenu({
   modelValue,
   options,
   onSelect,
+  recentlyUsedModels = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1218,6 +1329,7 @@ function MoreModelsSubmenu({
   modelValue: string;
   options: readonly ModelPickerOption[];
   onSelect: (value: string) => void;
+  recentlyUsedModels?: string[];
 }) {
   const { isLastHovered, hoverProps } = useMenuItemHover();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1296,15 +1408,40 @@ function MoreModelsSubmenu({
         }}
       >
         <MenuHoverProvider>
-          {options.map((option) => (
+          {options.map((option) => {
+            const KNOWN_GOOD2 = new Set([
+              "nvidia/minimaxai/minimax-m3",
+              "nvidia/minimaxai/minimax-m2.7",
+              "nvidia/nvidia/nemotron-3-nano-30b-a3b",
+              "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
+              "nvidia/meta/llama-3.1-70b-instruct",
+              "nvidia/meta/llama-3.1-8b-instruct",
+              "nvidia/moonshotai/kimi-k3",
+              "nvidia/deepseek-ai/deepseek-v4-pro",
+              "openrouter/z-ai/glm-5.3",
+              "openrouter/z-ai/glm-5.3-flash",
+              "openrouter/anthropic/claude-sonnet-4.6",
+              "openrouter/anthropic/claude-opus-4.5",
+              "openrouter/openai/gpt-5.4",
+              "openrouter/qwen/qwen3.5-plus-20260420",
+              "opencode/big-pickle",
+            ]);
+            const badge2 = option.isDefault
+              ? { type: "default" as const, label: "推荐" }
+              : recentlyUsedModels.includes(option.value) || KNOWN_GOOD2.has(option.value)
+              ? { type: "recent" as const, label: KNOWN_GOOD2.has(option.value) ? "已验证" : "近期使用" }
+              : undefined;
+            return (
             <MenuRowButton
               key={option.value}
               label={stripModelBrandPrefix(option.label, activeBrandPrefix)}
               qualifier={option.routeProviderId}
               selected={!isPreviewing && option.value === modelValue}
               onClick={() => onSelect(option.value)}
+              badge={badge2}
             />
-          ))}
+            );
+          })}
         </MenuHoverProvider>
       </PopoverContent>
     </Popover>
@@ -1331,6 +1468,7 @@ function MenuRowButton({
   role,
   onPointerEnter: callerPointerEnter,
   onKeyDown: callerKeyDown,
+  badge,
 }: {
   label: string;
   qualifier?: string;
@@ -1342,6 +1480,7 @@ function MenuRowButton({
   role?: React.AriaRole;
   onPointerEnter?: PointerEventHandler<HTMLButtonElement>;
   onKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  badge?: { type: "default" | "recent"; label: string };
 }) {
   const { hoverProps } = useMenuItemHover({
     onPointerEnter: callerPointerEnter,
@@ -1377,6 +1516,20 @@ function MenuRowButton({
         ) : null}
         {qualifier ? (
           <span className="ml-1.5 text-subtle-foreground">{qualifier}</span>
+        ) : null}
+        {badge ? (
+          <span
+            aria-hidden="true"
+            className={cn(
+              "ml-1.5 inline-flex items-center gap-0.5 px-1 rounded text-[10px] font-medium",
+              badge.type === "default"
+                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                : "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+            )}
+          >
+            {badge.type === "default" ? "⭐" : "✅"}
+            <span className="hidden sm:inline">{badge.label}</span>
+          </span>
         ) : null}
       </span>
       <span className="flex shrink-0 items-center gap-1.5">

@@ -1,0 +1,112 @@
+{
+  "schema": 2,
+  "histogram_buckets": [
+    "<3",
+    "3-4.5",
+    "4.5-7",
+    ">=7"
+  ],
+  "scenes": {
+    "scene:banner_dark": {
+      "elements": 9,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 0,
+        ">=7": 9
+      }
+    },
+    "scene:banner_light": {
+      "elements": 9,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 0,
+        ">=7": 9
+      }
+    },
+    "scene:home_dark": {
+      "elements": 17,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 4,
+        ">=7": 13
+      }
+    },
+    "scene:home_light": {
+      "elements": 17,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 4,
+        ">=7": 13
+      }
+    },
+    "scene:rail_full": {
+      "elements": 17,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 4,
+        ">=7": 13
+      }
+    },
+    "scene:rail_icon": {
+      "elements": 7,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 0,
+        ">=7": 7
+      }
+    },
+    "scene:rail_peek": {
+      "elements": 16,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 3,
+        ">=7": 13
+      }
+    },
+    "scene:settings_dark": {
+      "elements": 34,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 7,
+        ">=7": 27
+      }
+    },
+    "scene:settings_light": {
+      "elements": 34,
+      "failures": 0,
+      "hist": {
+        "<3": 0,
+        "3-4.5": 0,
+        "4.5-7": 7,
+        ">=7": 27
+      }
+    }
+  },
+  "totals": {
+    "scenes": 9,
+    "elements": 160,
+    "failures": 0,
+    "histogram": {
+      "<3": 0,
+      "3-4.5": 0,
+      "4.5-7": 29,
+      ">=7": 131
+    }
+  }
+}

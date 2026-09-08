@@ -1,0 +1,174 @@
+From 3650089e688ceec7f15922ab6369848ba6dce5ba Mon Sep 17 00:00:00 2001
+From: tsing <tsingcao@gmail.com>
+Date: Sun, 6 Sep 2026 17:36:56 +1200
+Subject: [PATCH 2/5] =?UTF-8?q?feat(dshell):=20peek=20=E6=B5=AE=E5=B1=82?=
+ =?UTF-8?q?=E7=82=B9=E5=87=BB=E5=A5=91=E7=BA=A6=E2=80=94=E2=80=94=E5=A4=96?=
+ =?UTF-8?q?=E7=82=B9=E7=AB=8B=E5=8D=B3=E6=94=B6=E8=B5=B7=E3=80=81=E5=86=85?=
+ =?UTF-8?q?=E7=82=B9=E6=AD=A3=E5=B8=B8=E5=AF=BC=E8=88=AA?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+icon rail hover-peek 浮层此前只有 hover 进入/离开两条路径：点浮层外的
+内容区要等 350ms 防抖才收，浮层盖着内容区挡操作。补上确定性点击契约：
+
+- peek 激活期间监听 document pointerdown：落在浮层（[data-sidebar="panel"]）
+  之外立即收起，并清掉 350ms 折叠定时器（不会二次翻转）；落在浮层内忽略，
+  行点击正常导航。监听只在 railActive && railPeek 期间挂载，全宽侧栏/无
+  rail 态零影响。
+- 单测（sidebar.test.tsx，+3）：浮层内点击触发导航且 peek 保持、移出后
+  rail 回到 icon（不粘展开态）；外点立即收起无需推进定时器；pointerdown
+  落浮层内被忽略。renderRailHarness 支持 children 注入行。
+
+验证：sidebar 套件 37/37，rail 三套件 56/56，tsc 干净。
+---
+ apps/app/src/components/ui/sidebar.test.tsx | 72 ++++++++++++++++++++-
+ apps/app/src/components/ui/sidebar.tsx      | 21 ++++++
+ 2 files changed, 91 insertions(+), 2 deletions(-)
+
+diff --git a/apps/app/src/components/ui/sidebar.test.tsx b/apps/app/src/components/ui/sidebar.test.tsx
+index 014fbfc02..9a7bb90f4 100644
+--- a/apps/app/src/components/ui/sidebar.test.tsx
++++ b/apps/app/src/components/ui/sidebar.test.tsx
+@@ -7,7 +7,7 @@ import {
+   render,
+   screen,
+ } from "@testing-library/react";
+-import { memo } from "react";
++import { memo, type ReactNode } from "react";
+ import { flushSync } from "react-dom";
+ import { renderToString } from "react-dom/server";
+ import { afterEach, describe, expect, it, vi } from "vitest";
+@@ -865,16 +865,18 @@ describe("sidebar icon rail", () => {
+     rail,
+     onRailChange,
+     iconRail = true,
++    children = "Sidebar content",
+   }: {
+     rail?: boolean;
+     onRailChange?: (rail: boolean) => void;
+     iconRail?: boolean;
++    children?: ReactNode;
+   } = {}) {
+     render(
+       <CompactViewportOverrideProvider isCompactViewport={false}>
+         <SidebarProvider rail={rail} onRailChange={onRailChange}>
+           <RailControls />
+-          <Sidebar iconRail={iconRail}>Sidebar content</Sidebar>
++          <Sidebar iconRail={iconRail}>{children}</Sidebar>
+         </SidebarProvider>
+       </CompactViewportOverrideProvider>,
+     );
+@@ -1029,4 +1031,70 @@ describe("sidebar icon rail", () => {
+     });
+     expect(panel.getAttribute("data-collapsible")).toBe("icon");
+   });
++
++  it("peek 期间点击浮层内行：正常触发导航且 rail 保持 icon", () => {
++    vi.useFakeTimers();
++    const onNavigate = vi.fn();
++    const panel = renderRailHarness({
++      rail: true,
++      children: (
++        <button type="button" onClick={onNavigate}>
++          Open thread
++        </button>
++      ),
++    });
++
++    expect(panel.getAttribute("data-collapsible")).toBe("icon");
++    fireEvent.mouseEnter(panel);
++    expect(panel.getAttribute("data-rail-peek")).toBe("true");
++
++    // 浮层内点击：行 onClick 正常触发，且不把 peek 收起（鼠标仍在浮层上）
++    fireEvent.click(screen.getByRole("button", { name: "Open thread" }));
++    expect(onNavigate).toHaveBeenCalledTimes(1);
++    expect(panel.getAttribute("data-rail-peek")).toBe("true");
++    expect(panel.getAttribute("data-collapsible")).toBe("");
++
++    // 移出浮层：350ms 后收回 icon —— rail 保持 icon，不粘在展开态
++    fireEvent.mouseLeave(panel);
++    act(() => {
++      vi.advanceTimersByTime(350);
++    });
++    expect(panel.getAttribute("data-collapsible")).toBe("icon");
++    expect(panel.getAttribute("data-rail-peek")).toBeNull();
++    expect(screen.getByTestId("rail-state").textContent).toBe("true");
++  });
++
++  it("peek 期间点击浮层外内容区：立即收起，不等 350ms 防抖", () => {
++    vi.useFakeTimers();
++    const panel = renderRailHarness({ rail: true });
++
++    fireEvent.mouseEnter(panel);
++    expect(panel.getAttribute("data-rail-peek")).toBe("true");
++
++    // 点内容区（panel 之外）→ 立即收回 icon，无需推进 350ms 定时器
++    fireEvent.pointerDown(document.body);
++    expect(panel.getAttribute("data-rail-peek")).toBeNull();
++    expect(panel.getAttribute("data-collapsible")).toBe("icon");
++
++    // 定时器被清掉：继续推进也不会有二次状态翻转
++    act(() => {
++      vi.advanceTimersByTime(500);
++    });
++    expect(panel.getAttribute("data-collapsible")).toBe("icon");
++  });
++
++  it("peek 期间点击浮层内不收起：pointerdown 落在面板内被忽略", () => {
++    vi.useFakeTimers();
++    const panel = renderRailHarness({
++      rail: true,
++      children: <button type="button">Inside row</button>,
++    });
++
++    fireEvent.mouseEnter(panel);
++    expect(panel.getAttribute("data-rail-peek")).toBe("true");
++
++    fireEvent.pointerDown(screen.getByRole("button", { name: "Inside row" }));
++    expect(panel.getAttribute("data-rail-peek")).toBe("true");
++    expect(panel.getAttribute("data-collapsible")).toBe("");
++  });
+ });
+diff --git a/apps/app/src/components/ui/sidebar.tsx b/apps/app/src/components/ui/sidebar.tsx
+index aa6fa37cb..f08c1e88b 100644
+--- a/apps/app/src/components/ui/sidebar.tsx
++++ b/apps/app/src/components/ui/sidebar.tsx
+@@ -756,6 +756,26 @@ const Sidebar = React.forwardRef<
+       }, 350);
+     }, []);
+     React.useEffect(() => clearRailPeekTimer, [clearRailPeekTimer]);
++    const railPanelRef = React.useRef<HTMLDivElement | null>(null);
++    // 浮层悬停期间的点击契约：点浮层内行 → 正常导航、peek 保持；点浮层外
++    // （内容区）→ 立即收起，不等 350ms 防抖，避免浮层盖住内容区挡操作。
++    React.useEffect(() => {
++      if (!railActive || !railPeek) return;
++      const handleRailPeekPointerDown = (event: PointerEvent) => {
++        const target = event.target;
++        if (target instanceof Node && railPanelRef.current?.contains(target)) {
++          return;
++        }
++        if (railPeekTimerRef.current !== null) {
++          window.clearTimeout(railPeekTimerRef.current);
++          railPeekTimerRef.current = null;
++        }
++        setRailPeek(false);
++      };
++      document.addEventListener("pointerdown", handleRailPeekPointerDown);
++      return () =>
++        document.removeEventListener("pointerdown", handleRailPeekPointerDown);
++    }, [railActive, railPeek]);
+ 
+     const handleOpenMobileChange = React.useCallback(
+       (nextOpen: boolean) => {
+@@ -837,6 +857,7 @@ const Sidebar = React.forwardRef<
+           )}
+         />
+         <div
++          ref={railPanelRef}
+           data-sidebar="panel"
+           className={cn(
+             "fixed inset-y-0 z-10 flex h-(--bb-shell-height) w-(--sidebar-width) select-none flex-col bg-sidebar text-sidebar-foreground [transition:left_200ms_linear,right_200ms_linear,width_200ms_linear,visibility_0s_linear_0s]",
+-- 
+2.54.0 (Apple Git-157)
+

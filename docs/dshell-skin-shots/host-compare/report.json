@@ -1,0 +1,116 @@
+{
+  "base": "http://127.0.0.1:18154",
+  "thread": "/projects/proj_piv8e7jmz9/threads/thr_my785vjuev",
+  "hosts": {
+    "panel": {
+      "xterm": {
+        "x": 1129,
+        "y": 57,
+        "w": 784,
+        "h": 924
+      },
+      "viewport": {
+        "x": 1129,
+        "y": 57,
+        "w": 784,
+        "h": 924
+      },
+      "dataAppTerminal": true,
+      "htmlDshell": true,
+      "htmlDark": true,
+      "panelId": "thread-detail-secondary-panel",
+      "viewportBg": "rgba(0, 0, 0, 0)",
+      "panelBackdrop": "blur(22px) saturate(1.4)"
+    },
+    "compose": {
+      "xterm": {
+        "x": 1129,
+        "y": 57,
+        "w": 784,
+        "h": 924
+      },
+      "viewport": {
+        "x": 1129,
+        "y": 57,
+        "w": 784,
+        "h": 924
+      },
+      "dataAppTerminal": true,
+      "htmlDshell": true,
+      "htmlDark": true,
+      "panelId": "thread-detail-secondary-panel-pane-2",
+      "viewportBg": "rgba(0, 0, 0, 0)",
+      "panelBackdrop": "blur(22px) saturate(1.4)"
+    }
+  },
+  "compare": {
+    "size": [
+      784,
+      924
+    ],
+    "meanAbsDiff": 0.082,
+    "diffPx": 417,
+    "diffPct": 0.058,
+    "bbox": [
+      147,
+      0,
+      70,
+      14
+    ],
+    "anchorMaxAbsDiff": 4,
+    "anchorsA": [
+      [
+        8,
+        11,
+        18
+      ],
+      [
+        8,
+        11,
+        18
+      ],
+      [
+        8,
+        11,
+        18
+      ],
+      [
+        8,
+        11,
+        18
+      ],
+      [
+        8,
+        11,
+        18
+      ]
+    ],
+    "anchorsB": [
+      [
+        8,
+        11,
+        18
+      ],
+      [
+        11,
+        15,
+        21
+      ],
+      [
+        8,
+        11,
+        18
+      ],
+      [
+        10,
+        15,
+        21
+      ],
+      [
+        8,
+        11,
+        18
+      ]
+    ]
+  }
+}

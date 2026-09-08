@@ -4,7 +4,10 @@
     "@bb/tsconfig/typecheck-overrides.json"
   ],
   "compilerOptions": {
-    "rootDir": ".",
+    // rootDir widened to the repo root so the /mcp route's dynamic import of
+    // packages/bb-app/src/mcp.ts (a .ts source) typechecks. Build uses esbuild
+    // (build-node-entry.mjs), and typecheck-overrides sets noEmit, so this is safe.
+    "rootDir": "../..",
     "types": ["node"]
   },
   "include": ["scripts", "src", "test", "tests", "fixtures", "stories"]

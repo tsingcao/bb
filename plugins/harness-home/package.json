@@ -1,0 +1,41 @@
+{
+  "name": "bb-plugin-harness-home",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Harness 首页插件 - 在 BB 首页展示 Control Room 概览卡片",
+  "engines": {
+    "bb": ">=0.0"
+  },
+  "bb": {
+    "name": "Harness Home",
+    "description": "在 BB 首页展示 Control Room 概览卡片",
+    "branding": {
+      "icon": "Home"
+    },
+    "server": "./src/server.ts",
+    "app": "./src/app.tsx"
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@get-bb/plugin-sdk": "workspace:*",
+    "@bb/shared-ui": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

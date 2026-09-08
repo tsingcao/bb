@@ -131,12 +131,19 @@ it("resolves every named branding.icon the shipped plugins declare", async () =>
   }
 
   expect(declared.length).toBeGreaterThan(0);
-  // 每个声明的命名图标都必须可解析：要么本身在图标集内，要么经
-  // PLUGIN_ICON_ALIASES 映射到原生图标——绝不静默落回 Zap 兜底。
+  // 每个声明的命名图标都必须可解析：要么本身在图标集内，要么经共享规范注册表
+  // （@bb/shared-ui/icon-registry 的 PLUGIN_ICON_ALIASES）映射到原生图标——
+  // 绝不静默落回 Zap 兜底。解析不到 = review 期响亮失败：点名未登记的图标名。
   const unresolved = declared.filter(
     ([, icon]) => pluginIconName(icon) === "Zap" && icon !== "Zap",
   );
-  expect(unresolved).toEqual([]);
+  if (unresolved.length > 0) {
+    throw new Error(
+      `插件图标未解析（在 @bb/shared-ui/icon-registry 的 PLUGIN_ICON_ALIASES 登记` +
+        `或改用 ICON_NAMES 内的原生名）：` +
+        unresolved.map(([plugin, icon]) => `${plugin} → ${icon}`).join(", "),
+    );
+  }
 });
 
 it("maps foreign plugin icon names to native icons", async () => {
@@ -145,4 +152,31 @@ it("maps foreign plugin icon names to native icons", async () => {
   expect(pluginIconName("MessagesSquare")).toBe("MessageSquare");
   expect(pluginIconName("LayoutDashboard")).toBe("GridView");
   expect(pluginIconName("Home")).toBe("AppWindow");
+});
+
+it("plugin icon registry aliases are consistent with ICON_NAMES", async () => {
+  const { ICON_NAMES } = await import("@bb/shared-ui/icon");
+  const { PLUGIN_ICON_ALIASES } = await import("@bb/shared-ui/icon-registry");
+  const native = new Set(ICON_NAMES as readonly string[]);
+
+  // 注册表的值必须是真实存在的原生图标（防别名表里写错目标名）
+  const badValues = Object.entries(PLUGIN_ICON_ALIASES).filter(
+    ([, target]) => !native.has(target),
+  );
+  if (badValues.length > 0) {
+    throw new Error(
+      `PLUGIN_ICON_ALIASES 目标不在 ICON_NAMES：` +
+        badValues.map(([k, v]) => `${k} → ${v}`).join(", "),
+    );
+  }
+
+  // 别名键不得与原生图标重名（重名说明该名已在图标集内，登记是多余的）
+  const collisions = Object.keys(PLUGIN_ICON_ALIASES).filter((k) =>
+    native.has(k),
+  );
+  if (collisions.length > 0) {
+    throw new Error(
+      `PLUGIN_ICON_ALIASES 键与 ICON_NAMES 重名（多余登记）：${collisions.join(", ")}`,
+    );
+  }
 });

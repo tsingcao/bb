@@ -34,9 +34,15 @@ function toModelPickerOption(
   model: AvailableModel,
   formatModelLabel: (displayName: string) => string,
 ): ModelPickerOption {
+  let raw = model.displayName || model.model;
+  // 去掉 NVIDIA 后面括号里的 MiniMax-M3（用户要求）
+  if (raw.includes("MiniMax-M3") && raw.startsWith("NVIDIA")) {
+    raw = raw.replace(/ \(MiniMax-M3\)/g, "");
+  }
   return {
     value: model.model,
-    label: formatModelLabel(model.displayName || model.model),
+    label: formatModelLabel(raw),
+    isDefault: model.isDefault,
     ...(model.routeProviderId
       ? { routeProviderId: model.routeProviderId }
       : {}),

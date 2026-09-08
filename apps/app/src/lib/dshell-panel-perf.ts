@@ -25,7 +25,9 @@ const BURST_OFF_DELAY_MS = 150;
 /** 终端在场探测周期：看门狗只在面板内存在终端时运行（避免常驻 rAF 开销）。 */
 const TERMINAL_PRESENCE_PROBE_MS = 500;
 
-const PANEL_SELECTOR = '[data-panel-id="thread-detail-secondary-panel"]';
+// 前缀匹配：覆盖主面板与 split 布局下的 -pane-N 变体（SecondaryPanelLayout 在
+// 分栏/多栏时会发 thread-detail-secondary-panel-${paneId}，同一组件的不同实例）。
+const PANEL_SELECTOR = '[data-panel-id^="thread-detail-secondary-panel"]';
 const GRID_SELECTOR = '[data-split-resize-grid-root]';
 const HANDLE_SELECTOR =
   '[id$="-secondary-panel-handle"], [role="separator"][aria-orientation="vertical"]';

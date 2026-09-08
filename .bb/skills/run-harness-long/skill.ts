@@ -1,4 +1,4 @@
-import { runLongTask } from "../../packages/bb-app/src/longrun/longrun.js";
+import { runLongTask } from "../../../packages/bb-app/src/longrun/longrun.js";
 
 export const description = "Run a long‑running harness (simulated training loop)";
 export const inputSchema = {
@@ -20,7 +20,7 @@ export default async function (args: { targetEpoch: number; maxStepsPerInvocatio
       const epoch = payload?.epoch ?? 0;
       const nextEpoch = epoch + 1;
       if (nextEpoch >= ${targetEpoch}) {
-        return { done: true, result: `Finished after ${targetEpoch} epochs` };
+        return { done: true, result: \`Finished after ${targetEpoch} epochs\` };
       }
       return { done: false, payload: { epoch: nextEpoch } };
     }

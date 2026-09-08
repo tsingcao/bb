@@ -1,0 +1,135 @@
+{
+ "glass_tab_terminal": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 99.0,
+   "lightPct": 0.2
+  },
+  "theme": "dark",
+  "chromeBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.58)",
+  "contentBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.84)",
+  "contrast": {
+   "checked": 0,
+   "fails": []
+  },
+  "hasChat": true,
+  "txt": ".xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider { background: #cbd2d93"
+ },
+ "glass_tab_terminal_light": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 37.7,
+   "lightPct": 61.4
+  },
+  "theme": "light",
+  "chromeBg": "oklab(0.985 -0.002 -0.0034641 / 0.58)",
+  "contentBg": "oklab(0.985 -0.002 -0.0034641 / 0.88)",
+  "contrast": {
+   "checked": 0,
+   "fails": []
+  },
+  "hasChat": true,
+  "txt": ".xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider { background: #cbd2d93"
+ },
+ "glass_tab_info": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 98.5,
+   "lightPct": 0.2
+  },
+  "theme": "dark",
+  "chromeBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.58)",
+  "contentBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.84)",
+  "contrast": {
+   "checked": 41,
+   "fails": [
+    {
+     "ratio": 3.79,
+     "txt": "Dirty"
+    }
+   ]
+  },
+  "hasChat": false,
+  "txt": "ParentNoneEnvironmentLocalDirectory/Users/timcao/workspace/nextloopBranchmainGit statusDir"
+ },
+ "glass_tab_diff": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 97.6,
+   "lightPct": 0.5
+  },
+  "theme": "dark",
+  "chromeBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.58)",
+  "contentBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.84)",
+  "contrast": {
+   "checked": 128,
+   "fails": []
+  },
+  "hasChat": false,
+  "txt": "Showing the first 500 changed files. Additional changes are omitted.‎.github/workflows/ci."
+ },
+ "glass_tab_sidechat": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 96.8,
+   "lightPct": 0.7
+  },
+  "theme": "dark",
+  "chromeBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.58)",
+  "contentBg": "oklab(0.165 -0.00167245 -0.0159124 / 0.84)",
+  "contrast": {
+   "checked": 11,
+   "fails": []
+  },
+  "hasChat": true,
+  "txt": "Replying to在我们现在的 Legs Loop BB 这个 IDE 里面，能不能把插件、核心功能或者 Control Room 放在首页上？有这种设计吗？就类似于可以做成自"
+ },
+ "glass_tab_info_light": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 0.1,
+   "lightPct": 98.6
+  },
+  "theme": "light",
+  "chromeBg": "oklab(0.985 -0.002 -0.0034641 / 0.58)",
+  "contentBg": "oklab(0.985 -0.002 -0.0034641 / 0.88)",
+  "contrast": {
+   "checked": 41,
+   "fails": []
+  },
+  "hasChat": false,
+  "txt": "ParentNoneEnvironmentLocalDirectory/Users/timcao/workspace/nextloopBranchmainGit statusDir"
+ },
+ "glass_tab_diff_light": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 0.3,
+   "lightPct": 97.8
+  },
+  "theme": "light",
+  "chromeBg": "oklab(0.985 -0.002 -0.0034641 / 0.58)",
+  "contentBg": "oklab(0.985 -0.002 -0.0034641 / 0.88)",
+  "contrast": {
+   "checked": 128,
+   "fails": []
+  },
+  "hasChat": false,
+  "txt": "Showing the first 500 changed files. Additional changes are omitted.‎.github/workflows/ci."
+ },
+ "glass_tab_sidechat_light": {
+  "pixels": {
+   "n": 1920000,
+   "darkPct": 0.4,
+   "lightPct": 97.1
+  },
+  "theme": "light",
+  "chromeBg": "oklab(0.985 -0.002 -0.0034641 / 0.58)",
+  "contentBg": "oklab(0.985 -0.002 -0.0034641 / 0.88)",
+  "contrast": {
+   "checked": 11,
+   "fails": []
+  },
+  "hasChat": true,
+  "txt": "Replying to在我们现在的 Legs Loop BB 这个 IDE 里面，能不能把插件、核心功能或者 Control Room 放在首页上？有这种设计吗？就类似于可以做成自"
+ }
+}

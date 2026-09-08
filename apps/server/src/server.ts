@@ -639,9 +639,13 @@ export function createApp(
   registerSkillsRegistryRoutes(publicApi, deps);
     app.route("/api/v1", publicApi);
     // MCP JSON‑RPC endpoint for external clients (e.g., Claude Desktop, Cursor)
-    app.post("/mcp", async (c) => {
-      // @ts-ignore: dynamic import of MCP handler
-      const { handleMcpRequest } = await import("../../packages/bb-app/src/mcp.ts");
+    // Uses `all` so both the JSON POST round-trip and the SSE GET path of the
+    // streamable HTTP transport are served. The handler is imported lazily so
+    // the @modelcontextprotocol/sdk dependency stays out of the cold path.
+    app.all("/mcp", async (c) => {
+      // From apps/server/src/server.ts, packages/ is three levels up.
+      // @ts-ignore: dynamic import of a .ts source file outside rootDir (tsx dev/harness only)
+      const { handleMcpRequest } = await import("../../../packages/bb-app/src/mcp.ts");
       return await handleMcpRequest(c.req.raw);
     });
   app.use("/api/v1/*", () => {

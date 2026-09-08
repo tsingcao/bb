@@ -481,6 +481,14 @@
         "UPDATE_TRANSCRIPT_EXPECTATIONS"
       ]
     },
+    // dshell 皮肤契约单测 gate（apps/app 的 test:dshell:unit 别名，8 个套件：
+    // dshell lib 三态/迁移/性能护栏 + 设置卡 + sidebar rail）。ci.yml tests job
+    // 的 dshell-unit 分片直接跑这个任务；与 dshell-skin-snapshot 工作流里的
+    // 同入口保持一致，保证分支 PR 不依赖快照 workflow 也强制过这 8 个套件。
+    "test:dshell:unit": {
+      "dependsOn": ["//#ensure-native-modules", "topo"],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/vitest.shared.ts"]
+    },
     // syncPluginTypes reads packages/plugin-sdk/bundled-types at runtime, and
     // plugin-scaffold-external packs @get-bb/plugin-sdk (prepack rebuilds its
     // dist), so the SDK build is a dependency.

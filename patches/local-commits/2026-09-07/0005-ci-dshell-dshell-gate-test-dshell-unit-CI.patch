@@ -1,0 +1,79 @@
+From da4cd4b255058281cc3b93b5984ee2e0d13406cf Mon Sep 17 00:00:00 2001
+From: tsing <tsingcao@gmail.com>
+Date: Sun, 6 Sep 2026 17:48:46 +1200
+Subject: [PATCH 5/5] =?UTF-8?q?ci(dshell):=20dshell=20=E5=8D=95=E5=85=83?=
+ =?UTF-8?q?=E6=B5=8B=E8=AF=95=20gate=E2=80=94=E2=80=94test:dshell:unit=20?=
+ =?UTF-8?q?=E6=9C=AC=E5=9C=B0=E4=B8=8E=20CI=20=E5=90=8C=E4=B8=80=E5=85=A5?=
+ =?UTF-8?q?=E5=8F=A3?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+把 dshell 皮肤工作流的单元测试收口成一条可执行入口，本地与 CI 完全一致
+（镜像主仓 make lint-scripts 的「scripts gate 与 CI 同一入口」设计）：
+
+- apps/app/package.json 新增 test:dshell:unit 别名：dshell lib（三态/迁移/
+  性能护栏）+ 设置卡（DshellAppearanceSetting/DshellMigrationBanner）+
+  sidebar rail（sidebar/SidebarRailToggle/AppLayout rail）共 8 个套件
+  95 个用例，~3s 跑完；ci.yml @bb/app 分片本就覆盖这些文件
+- dshell-skin-snapshot.yml 在 setup-workspace 后、快照前新增单元测试步：
+  单测红先于像素回归失败，便于定位；跑的就是同一别名
+- README 补 test:dshell:unit 用法
+
+验证：仓库根 pnpm --filter=@bb/app run test:dshell:unit 95/95，tsc 干净，
+package.json JSON 与 workflow YAML 可解析。
+---
+ .github/workflows/dshell-skin-snapshot.yml | 8 ++++++++
+ apps/app/package.json                      | 3 ++-
+ docs/dshell-skin-shots/README.md           | 2 ++
+ 3 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/.github/workflows/dshell-skin-snapshot.yml b/.github/workflows/dshell-skin-snapshot.yml
+index 42962fc7b..a2d8d316a 100644
+--- a/.github/workflows/dshell-skin-snapshot.yml
++++ b/.github/workflows/dshell-skin-snapshot.yml
+@@ -59,6 +59,14 @@ jobs:
+           pnpm-version: ${{ env.PNPM_VERSION }}
+           cache-prefix: dshell-skin
+ 
++      # dshell 单元测试 gate：dshell lib（三态/迁移/性能护栏）+ 设置卡
++      # （DshellAppearanceSetting/DshellMigrationBanner）+ sidebar rail
++      # （sidebar/SidebarRailToggle/AppLayout rail）。与本地入口完全一致
++      # （apps/app 的 test:dshell:unit 别名，同 ci.yml @bb/app 分片覆盖的文件）。
++      # 跑在快照之前：单测红先于像素回归失败，便于定位。
++      - name: Run dshell unit tests (lib + settings + sidebar rail)
++        run: pnpm --filter=@bb/app run test:dshell:unit
++
+       # 快照驱动的 app 由 e2e harness 以静态文件方式提供（BB_MOBILE_E2E_SERVE_APP=1
+       # 读取 apps/app/dist），与 mobile-e2e 工作流同款：先 build，再起 harness。
+       - name: Build the web app the snapshot drives
+diff --git a/apps/app/package.json b/apps/app/package.json
+index c51dea156..2a9adb0ec 100644
+--- a/apps/app/package.json
++++ b/apps/app/package.json
+@@ -15,7 +15,8 @@
+     "storybook:build": "ladle build",
+     "lint": "oxlint src vite.config.ts vite.dev.config.ts vite-bundle-stats.ts vite-font-preload.ts vite-shared-ui-seam.ts",
+     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+-    "test": "node scripts/generate-pwa-icons.mjs --check && vitest run --config vitest.config.ts"
++    "test": "node scripts/generate-pwa-icons.mjs --check && vitest run --config vitest.config.ts",
++    "test:dshell:unit": "vitest run --config vitest.config.ts src/lib/dshell.test.ts src/lib/dshell-migration.test.ts src/lib/dshell-panel-perf.test.ts src/components/settings/DshellAppearanceSetting.test.tsx src/components/settings/DshellMigrationBanner.test.tsx src/components/ui/sidebar.test.tsx src/components/sidebar/SidebarRailToggle.test.tsx src/components/layout/AppLayout.sidebar-rail.test.tsx"
+   },
+   "dependencies": {
+     "@bb/client-core": "workspace:*",
+diff --git a/docs/dshell-skin-shots/README.md b/docs/dshell-skin-shots/README.md
+index 0032b0b5f..7be2ff7e6 100644
+--- a/docs/dshell-skin-shots/README.md
++++ b/docs/dshell-skin-shots/README.md
+@@ -46,6 +46,8 @@ DSH-WORKTABLE 视觉语言在 bb 外壳上的落地，配套 `apps/app/src/compo
+ pnpm test:dshell:snapshot                 # 或 python3 scripts/dshell-skin-snapshot.py --check
+ # 皮肤有意改动后校准基线：
+ pnpm test:dshell:snapshot:update          # python3 scripts/dshell-skin-snapshot.py --update
++# dshell 单元测试 gate（lib + 设置卡 + sidebar rail，本地与 CI 同一入口）：
++pnpm test:dshell:unit                    # vitest run --config vitest.config.ts <8 个套件>
+ # 单场景：
+ python3 scripts/dshell-skin-snapshot.py --check --scene rail_icon
+ # CI 场景集（e2e harness 种子下可确定性验证的子集）：
+-- 
+2.54.0 (Apple Git-157)
+
