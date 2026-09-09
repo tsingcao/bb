@@ -17,6 +17,7 @@ import {
   type AppKeybindingOverrides,
 } from "@bb/domain";
 import { KeyboardSettingsSection } from "./KeyboardSettingsSection";
+import { keyboardSettingsMessages } from "@/lib/keyboard-settings-messages";
 
 const testState = vi.hoisted(() => {
   const defaultKeybindings = [
@@ -225,6 +226,22 @@ afterEach(() => {
 });
 
 describe("KeyboardSettingsSection", () => {
+  it("explains the hints switch scope in a tooltip", async () => {
+    render(<KeyboardSettingsSection />);
+
+    const hintSwitch = screen.getByRole("switch", {
+      name: "Show keyboard hints when holding CMD / Control",
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    fireEvent.pointerMove(hintSwitch, { pointerType: "mouse" });
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(tooltip.textContent).toBe(
+      keyboardSettingsMessages.showHintsTooltip,
+    );
+  });
+
   it("turns keyboard hints off while preserving the full settings contract", () => {
     render(<KeyboardSettingsSection />);
 

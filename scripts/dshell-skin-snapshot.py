@@ -119,6 +119,8 @@ GALLERY_SCENES = [
     "dshell_settings_original_dark", "dshell_settings_always_dark",
     "dshell_settings_auto_light", "dshell_settings_auto_dark",
     "rail_full", "rail_icon", "rail_peek",
+    "rail_icon_hold", "rail_peek_hold",
+    "palette_rail",
     "glass_dark_terminal", "glass_light_terminal",
     "migration_banner_dark", "migration_banner_light",
     "glass_tab_info", "glass_tab_diff", "glass_tab_terminal", "glass_tab_sidechat",
@@ -550,9 +552,20 @@ def assert_peek_no_push(page, scene: str, icon_metrics: dict) -> None:
 
 
 def scene_rail(state: str) -> None:
+    """rail 三态（full/icon/peek）+ 按住 ⌘ 的 hold 变体（*_hold）。
+
+    hold 变体：真实 keydown 按住主修饰键（Mac=⌘ / 其它=Ctrl）超过 provider 的
+    700ms hold 延迟 → 全应用 shortcut hint 激活，SidebarRailToggle 的常驻药丸
+    已改为 modifier-hold（与 AppCommandShortcutHint 同一契约），此态下 rail_icon
+    的药丸才出现。hold 变体验证：药丸出现（icon 态）+ peek 几何不推挤契约在
+    hold 态下同样成立。
+    """
     scene = f"rail_{state}"
     with playwright_sync() as page:
         boot(page, "on", "dark", "/")
+        mac = page.evaluate("navigator.platform") or ""
+        mac = bool(re.search(r"Mac|iPhone|iPad|iPod", mac))
+        mod_key = "Meta" if mac else "Control"
         toggle = page.locator('[data-testid="sidebar-rail-toggle"]')
         if state == "full":
             # 已折叠（icon rail）才展开
@@ -578,6 +591,42 @@ def scene_rail(state: str) -> None:
                     failures.append(f"{scene}/no-push: icon 态基准 {icon_metrics.get('error')}")
                 else:
                     assert_peek_no_push(page, scene, icon_metrics)
+        if state.endswith("_hold"):
+            # modifier-hold 变体：按住主修饰键超过 700ms hold 延迟，让全应用
+            # shortcut hint 激活（AppCommandProvider 的 SHORTCUT_HINT_HOLD_DELAY_MS）。
+            # 用 keyboard.down（不 up）真实模拟「按住」；Playwright 的 keydown 会
+            # 持续到显式 up 或场景结束（场景结束即关浏览器，无需清理）。
+            page.keyboard.down(mod_key)
+            page.wait_for_timeout(1100)
+            # icon 态 hold 下药丸应出现（SidebarRailToggle modifier-hold 契约）
+            if state == "icon_hold":
+                pill = page.evaluate(
+                    """() => {
+                      const btn = document.querySelector('[data-testid=sidebar-rail-toggle]');
+                      if (!btn) return null;
+                      const pill = btn.nextElementSibling;
+                      return pill && pill.tagName === "KBD" ? (pill.textContent || "") : null;
+                    }"""
+                )
+                if pill is None:
+                    failures.append(f"{scene}/hold-pill: 按住 {mod_key} 后快捷键药丸未出现")
+                elif "\\" not in pill:
+                    failures.append(f"{scene}/hold-pill: 药丸缺反斜杠组合（pill={pill!r}）")
+                else:
+                    log(f"  [PASS] {scene}/hold-pill  pill={pill!r}")
+            # peek 态 hold 下 no-push 契约同样要成立（在 hold 期间重新悬停验证）
+            if state == "peek_hold":
+                rect = element_rect(page, '[data-sidebar="panel"]')
+                if rect:
+                    page.mouse.move(700, rect["y"] + rect["h"] // 2)
+                    page.wait_for_timeout(900)
+                    icon_metrics = page.evaluate(RAIL_PUSH_JS)
+                    page.mouse.move(rect["x"] + 20, rect["y"] + rect["h"] // 2)
+                    page.wait_for_timeout(500)
+                    if "error" in icon_metrics:
+                        failures.append(f"{scene}/no-push: icon 态基准 {icon_metrics.get('error')}")
+                    else:
+                        assert_peek_no_push(page, scene, icon_metrics)
         rect = element_rect(page, '[data-sidebar="panel"]')
         if not rect:
             failures.append(f"{scene}/sidebar: 侧栏未找到")
@@ -585,6 +634,91 @@ def scene_rail(state: str) -> None:
             shot = Path("/tmp") / f"{scene}__sidebar.png"
             capture_region(page, str(shot), rect)
             compare_region(scene, "sidebar", shot)
+        if state.endswith("_hold"):
+            page.keyboard.up(mod_key)
+
+
+def scene_palette() -> None:
+    """命令面板 railToggle 行可见性场景（皮肤无关的 UI 契约 + 玻璃面板入基线）。
+
+    契约（与 CommandPalette.railToggle.test.tsx 同口径）：palette.open（⌘⇧P）打开
+    命令面板，过滤 ">Toggle icon rail" 后渲染行必须含：
+      * 标题 "Toggle icon rail"（app-command-metadata 的 label）
+      * 分组 "Window and layout"（APP_COMMAND_GROUPS 的组名）
+      * kbd 快捷键药丸：反斜杠组合（Mac=⇧⌘\，其它平台=Ctrl+Shift+\）
+    行内元素走 DOM 断言（跨平台确定性）；像素基线取面板头部（输入框 + 玻璃底），
+    避开命令列表区（列表随平台/滚动状态变化，不确定性高）。
+    """
+    scene = "palette_rail"
+    with playwright_sync() as page:
+        boot(page, "on", "dark", "/")
+        mac = page.evaluate("navigator.platform") or ""
+        mac = bool(re.search(r"Mac|iPhone|iPad|iPod", mac))
+        # palette.open 默认 mod+shift+p（server 默认绑定表）
+        page.keyboard.down("Meta" if mac else "Control")
+        page.keyboard.down("Shift")
+        page.keyboard.press("KeyP")
+        page.keyboard.up("Shift")
+        page.keyboard.up("Meta" if mac else "Control")
+        page.wait_for_timeout(700)
+        combo = page.locator('[role="combobox"]')
+        if combo.count() == 0:
+            failures.append(f"{scene}/open: 命令面板未打开（palette.open 未触发）")
+            return
+        combo.fill(">Toggle icon rail")
+        page.wait_for_timeout(700)
+        row = page.evaluate(
+            """() => {
+              const options = [...document.querySelectorAll('[role="option"]')];
+              const row = options.find(o => (o.textContent || "").includes("Toggle icon rail"));
+              if (!row) return null;
+              const pill = row.querySelector("kbd");
+              return {
+                title: (row.textContent || "").includes("Toggle icon rail"),
+                group: (row.textContent || "").includes("Window and layout"),
+                pillText: pill ? (pill.textContent || "") : null,
+                rect: (() => { const r = row.getBoundingClientRect();
+                  return {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)}; })(),
+              };
+            }"""
+        )
+        if row is None:
+            failures.append(f"{scene}/row: 过滤后未找到 Toggle icon rail 行")
+            return
+        if not row["title"]:
+            failures.append(f"{scene}/row: 行标题缺失")
+        if not row["group"]:
+            failures.append(f"{scene}/row: 分组 'Window and layout' 缺失")
+        pill = row["pillText"] or ""
+        if "\\" not in pill:
+            failures.append(f"{scene}/row: 快捷键药丸缺反斜杠组合（pill={pill!r}）")
+        if mac and not ("⇧" in pill and "⌘" in pill):
+            failures.append(f"{scene}/row: Mac 药丸应为 ⇧⌘\（pill={pill!r}）")
+        if not mac and not ("Shift" in pill and "Ctrl" in pill):
+            failures.append(f"{scene}/row: 非 Mac 药丸应为 Ctrl+Shift+\（pill={pill!r}）")
+        if not failures or all(not f.startswith(scene) for f in failures):
+            log(f"  [PASS] {scene}/row  title+group+pill({pill!r}) 全部在场")
+        # 像素基线：面板头部（输入框区，纯皮肤玻璃面）。
+        dialog = page.evaluate(
+            """() => {
+              const input = document.querySelector('[role="combobox"]');
+              if (!input) return null;
+              const dlg = input.closest('[role="dialog"]') || input.closest('[cmdk-root]');
+              const r = (dlg || input).getBoundingClientRect();
+              return {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.min(Math.round(r.height), 72)};
+            }"""
+        )
+        if not dialog:
+            failures.append(f"{scene}/header: 面板容器无几何")
+            return
+        shot = Path("/tmp") / f"{scene}__header.png"
+        capture_region(page, str(shot), dialog)
+        compare_region(scene, "header", shot)
+        # 收尾：Escape 关面板，避免污染同进程后续场景的模态上下文。
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(400)
+        if page.locator('[role="combobox"]').count() != 0:
+            failures.append(f"{scene}/close: Escape 后面板未关闭")
 
 
 def close_terminal(page) -> None:
@@ -1363,10 +1497,12 @@ def main() -> int:
     for (mode, theme) in [("off", "dark"), ("on", "dark"), ("auto", "light"), ("auto", "dark")]:
         if want("dshell_settings"):
             scene_settings(mode, theme)
-    for state in ("full", "icon", "peek"):
+    for state in ("full", "icon", "peek", "icon_hold", "peek_hold"):
         # 传完整场景名：--scene rail_peek / --scene rail（前缀）都能精确命中对应状态
         if want(f"rail_{state}"):
             scene_rail(state)
+    if want("palette_rail"):
+        scene_palette()
     for theme in ("dark", "light"):
         if want(f"migration_banner_{theme}"):
             scene_migration_banner(theme)

@@ -18,6 +18,12 @@ import { Button } from "@bb/shared-ui/button";
 import { Icon } from "@bb/shared-ui/icon";
 import { Input } from "@bb/shared-ui/input";
 import { Switch } from "@bb/shared-ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@bb/shared-ui/tooltip";
 import { cn } from "@bb/shared-ui/lib/utils";
 import {
   APP_COMMAND_GROUPS,
@@ -636,19 +642,29 @@ export function KeyboardSettingsSection() {
           description={keyboardSettingsMessages.showHintsDescription}
           label={keyboardSettingsMessages.showHintsLabel}
         >
-          <Switch
-            aria-label={keyboardSettingsMessages.showHintsLabel}
-            checked={generalSettings.showKeyboardHints}
-            disabled={
-              systemConfig.data === undefined || updateGeneralSettings.isPending
-            }
-            onCheckedChange={(showKeyboardHints) =>
-              updateGeneralSettings.mutate({
-                ...generalSettings,
-                showKeyboardHints,
-              })
-            }
-          />
+          <TooltipProvider delayDuration={250}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Switch
+                  aria-label={keyboardSettingsMessages.showHintsLabel}
+                  checked={generalSettings.showKeyboardHints}
+                  disabled={
+                    systemConfig.data === undefined ||
+                    updateGeneralSettings.isPending
+                  }
+                  onCheckedChange={(showKeyboardHints) =>
+                    updateGeneralSettings.mutate({
+                      ...generalSettings,
+                      showKeyboardHints,
+                    })
+                  }
+                />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                {keyboardSettingsMessages.showHintsTooltip}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </SettingsWithControl>
         <Input
           aria-label={keyboardSettingsMessages.searchAriaLabel}

@@ -12,12 +12,16 @@ import {
 
 // ⌘⇧\ 命令（sidebar.railToggle）的快捷键提示：mock 掉 provider，
 // 与 SidebarNavigationRegion.test 同一约定 —— 组件只消费 useAppCommandShortcut。
+// 药丸是 modifier-hold 交互（与全应用 AppCommandShortcutHint 同一契约）：
+// 按住主修饰键（⌘/Ctrl）才显示，mock 里用 modifierHeld 开关模拟。
 const mocks = vi.hoisted(() => ({
   shortcut: null as { label: string; ariaKeyshortcuts: string } | null,
+  modifierHeld: false,
 }));
 
 vi.mock("@/components/commands/AppCommandProvider", () => ({
   useAppCommandShortcut: () => mocks.shortcut,
+  useIsAppCommandModifierHeld: () => mocks.modifierHeld,
 }));
 
 function renderToggle(rail?: boolean, onRailChange?: (rail: boolean) => void) {
@@ -42,6 +46,7 @@ describe("SidebarRailToggle", () => {
 
   beforeEach(() => {
     mocks.shortcut = null;
+    mocks.modifierHeld = false;
   });
 
   it("expanded state: aria-label announces the collapse action and chevron points left", () => {
@@ -76,8 +81,9 @@ describe("SidebarRailToggle", () => {
     expect(chevron(button, "ChevronRight")).toBe(true);
   });
 
-  it("draws the shortcut pill next to the button while expanded", () => {
+  it("draws the shortcut pill next to the button while expanded and the modifier is held", () => {
     mocks.shortcut = { label: "⌘⇧\\", ariaKeyshortcuts: "Meta+Shift+\\" };
+    mocks.modifierHeld = true;
     const button = renderToggle(false);
     const pill = button.nextElementSibling;
     expect(pill?.tagName).toBe("KBD");
@@ -85,7 +91,7 @@ describe("SidebarRailToggle", () => {
     expect(pill?.getAttribute("aria-hidden")).toBe("false");
   });
 
-  it("hides the shortcut pill in rail mode and without a shortcut", () => {
+  it("hides the shortcut pill in rail mode, without a shortcut, and while the modifier is up", () => {
     mocks.shortcut = { label: "⌘⇧\\", ariaKeyshortcuts: "Meta+Shift+\\" };
     const railButton = renderToggle(true);
     expect(railButton.nextElementSibling).toBeNull();
@@ -94,6 +100,32 @@ describe("SidebarRailToggle", () => {
     mocks.shortcut = null;
     const plainButton = renderToggle(false);
     expect(plainButton.nextElementSibling).toBeNull();
+
+    // modifier-hold 契约：快捷键在但主修饰键未按住 → 药丸同样隐藏
+    cleanup();
+    mocks.shortcut = { label: "⌘⇧\\", ariaKeyshortcuts: "Meta+Shift+\\" };
+    mocks.modifierHeld = false;
+    const unreleasedButton = renderToggle(false);
+    expect(unreleasedButton.nextElementSibling).toBeNull();
+  });
+
+  it("reveals the pill while the modifier is held and hides it again on release", () => {
+    mocks.shortcut = { label: "⌘⇧\\", ariaKeyshortcuts: "Meta+Shift+\\" };
+    mocks.modifierHeld = false;
+    const button = renderToggle(false);
+    expect(button.nextElementSibling).toBeNull();
+
+    // 按住（provider 的 700ms hold 延迟触发 state 翻转）→ 药丸出现
+    mocks.modifierHeld = true;
+    cleanup();
+    const heldButton = renderToggle(false);
+    expect(heldButton.nextElementSibling?.tagName).toBe("KBD");
+
+    // 松开 → 药丸消失
+    mocks.modifierHeld = false;
+    cleanup();
+    const releasedButton = renderToggle(false);
+    expect(releasedButton.nextElementSibling).toBeNull();
   });
 
   it("click wires to toggleRail: rail=false reports true to onRailChange", () => {

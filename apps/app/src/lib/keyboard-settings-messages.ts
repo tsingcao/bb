@@ -39,6 +39,9 @@ export const keyboardSettingsMessages = {
     "Click a shortcut, then press its new keys. Changes sync to every bb window.",
   showHintsDescription: "Show shortcut badges after holding Command or Control.",
   showHintsLabel: "Show keyboard hints when holding CMD / Control",
+  /** 开关 tooltip：说明该开关同时控制内联提示与 tooltip 药丸两类表面。 */
+  showHintsTooltip:
+    "Controls both the inline shortcut badges and the shortcut pills shown inside tooltips. Hold Command or Control to reveal them.",
   searchAriaLabel: "Search keyboard shortcuts",
   searchPlaceholder: "Search shortcuts",
   noMatchesMessage: (query: string): string =>
