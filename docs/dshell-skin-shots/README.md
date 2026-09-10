@@ -37,6 +37,25 @@ opt-in 三态（Original/Auto/Always）落地前，旧版本用布尔值 `bb.dsh
 - **复现**：本地 dev server 上 `localStorage["bb.dshell.enabled"]="1"`（无 dismissed
   键）后整页 reload，横幅即出现在首页顶栏。
 
+## 重置到全新 clone 语义（pristine reset）
+
+基线重拍前若怀疑工作区漂移（stale dist / 残留 harness / 过期 diff 报告），先跑：
+
+    bash scripts/dshell-pristine-reset.sh              # 清态 → build → harness → 线程无关 --check
+    bash scripts/dshell-pristine-reset.sh --skip-build # 跳过 build（仅清态+check）
+
+脚本清理三类 harness 之外的漂移源（harness 数据本身每次 mkdtemp 全新，无需清理）：
+
+1. **apps/app/dist 过期** —— `BB_MOBILE_E2E_SERVE_APP=1` 服务的是已构建产物；
+   全新 clone 会先 build，本脚本同样先 `turbo build --filter=@bb/app`；
+2. **残留 harness 进程**（占用 41999 端口 → 连到旧种子数据）；
+3. **过期审阅产物**（/tmp 场景截图 + `auto/.diff/` 差异报告，均不属提交基线）。
+
+然后起 harness、跑**线程无关** `--check --ci`（无 `BB_E2E_THREAD`：玻璃/终端
+场景自动 skip，剩下的就是 home/settings/rail 全套）。退出码：0 绿 / 1
+FAIL·MISSING / 2 环境。dist 与源码不同步时**不要**用 `--skip-build`，否则结果
+不代表全新 clone 语义。
+
 ## 复现（如需重拍）
 
 **一条命令**在本地 dev server（http://127.0.0.1:18154）上重拍**全部**逐 tab 审计产物：
@@ -122,6 +141,20 @@ python3 scripts/dshell-skin-snapshot.py --check --ci
   终端会话按线程持久化，场景收尾会点 Close 清理，避免残留 tab 污染后续场景基线。
 - 退出码契约：**0** 全绿 / **1** 渲染回归（差异报告写入 `auto/.diff/*.diff.png`，
   双图并排 + 红色差异热区）/ **2** 基线缺失或环境错误（`--update` 校准后重跑）。
+- 离线重放（`--json-only`）：每次全量运行（`--check`/`--update`/`--gallery`/`--ci`，
+  不带 `--scene`）结束时把结构化审计 + FAIL/SKIP/console 错误 + 退出码落盘为
+  `docs/dshell-skin-shots/.last-run.json`（机器数据，已 gitignore；崩溃的运行也留档
+  exit 70 + 已跑场景的部分数据）。`--json-only` 随后把它重放成 `audit.json`，
+  **纯 stdlib、不启动 Playwright**——没装浏览器依赖的系统 python3 也能跑：
+
+  ```bash
+  python3 scripts/dshell-skin-snapshot.py --check          # 真实运行，落盘 .last-run.json
+  python3 scripts/dshell-skin-snapshot.py --json-only      # 离线重放 → audit.json
+  ```
+
+  CI 里快照步之后固定跑重放步（`if: always()`，失败的运行也出 audit artifact），
+  供无浏览器环境下离线审阅玻璃 alpha / 对比度 / console 错误历史。`--last-run`/`--out`
+  可重定向记录与输出路径；记录缺失/不可解析/schema 不符退出码 2。
 - 阈值：差异像素（>12/255）占比 ≤0.5% 且平均绝对差 ≤1.5。非确定性内容（如 xterm
   光标闪烁）不比对像素，只断言画布底色 `--dsh-term-bg` 解析 + 主色值。
 - 校准纪律：皮肤有意改版后跑 `--update` 提交新基线；验证脚本能检出回归的方法是临时

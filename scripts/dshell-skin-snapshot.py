@@ -27,12 +27,19 @@
   gallery，与 auto/ 机器基线分开）；--gallery 单独重拍 gallery + audit.json、不动基线。
   每次归档同时把结构化审计汇总到 docs/dshell-skin-shots/audit.json（玻璃 alpha / 亮色
   逐文本对比 / 面板像素明暗占比 / console 错误）——一条命令替代 ad-hoc 审计脚本。
+- json_only：离线重放（见下文「离线重放」条目）——跳过浏览器只把 .last-run.json 重放成 audit.json。
 - glass_anim ⌘J 折叠/展开 + 分栏拖拽帧采样场景（无像素基线）：动画期间每个 rAF 帧
   采样面板根 [data-panel-id=thread-detail-secondary-panel] 的计算样式，断言
   (a) backdrop-filter 自始至终含 blur（拖拽中被性能护栏降到 6px 也算持有），
   (b) transition-duration 每个采样帧都等于 --panel-collapse-duration 的解析值
   （220ms→0.22s；拖拽时该变量被置 0ms→0s，变量移除回退 0.22s），
   (c) 确实采到中间帧（宽度在起止之间单调变化），证明动画真的按该时长在跑。
+
+- 离线重放：任何不带 --scene 的真实运行（--check/--update/--gallery/--ci）都会把
+  结构化审计 + console 错误 + FAIL/SKIP 清单 + 退出码落盘为
+  docs/dshell-skin-shots/.last-run.json（机器数据，已 gitignore）；--json-only 随后
+  把该记录重放成 audit.json，不启动 Playwright（纯 stdlib，任何 python3 可跑），
+  供无浏览器环境下离线审阅/归档。
 
 退出码: 0 全绿 / 1 渲染回归 / 2 基线缺失或环境错误
 """
@@ -44,7 +51,68 @@ import os
 import re
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+# --- --json-only 离线重放：放在 playwright/Pillow 自举之前，纯 stdlib 即可完成，
+# --- 没装浏览器依赖的 python3 也能审阅最近一次运行的结果。
+def _rel_to_root(p: Path) -> str:
+    """REPO_ROOT 相对路径；p 在仓库外（测试/自定义 --out）时返回原样字符串。"""
+    try:
+        return str(p.resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(p)
+
+
+def _json_only_replay(argv: list[str]) -> int:
+    """把最近一次真实运行落盘的 .last-run.json 重放成 audit.json（离线审阅）。
+
+    只做数据搬运：记录里的 audit 字段原样序列化为 audit.json（与真实运行写出的
+    结构完全一致），并打印上次运行的摘要。退出码：0 重放成功 / 2 记录缺失或不可解析。
+    """
+    ap = argparse.ArgumentParser(
+        prog="dshell-skin-snapshot.py --json-only",
+        description="把最近一次全量运行的 .last-run.json 重放成 audit.json（离线，无浏览器）",
+    )
+    ap.add_argument("--json-only", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--last-run", default=None, help="运行记录路径（默认 docs/dshell-skin-shots/.last-run.json）")
+    ap.add_argument("--out", default=None, help="输出 audit.json 路径（默认 docs/dshell-skin-shots/audit.json）")
+    args, unknown = ap.parse_known_args(argv)
+    root = Path(__file__).resolve().parent.parent
+    gallery = root / "docs" / "dshell-skin-shots"
+    last_run = Path(args.last_run) if args.last_run else gallery / ".last-run.json"
+    out = Path(args.out) if args.out else gallery / "audit.json"
+    if unknown:
+        print(f"--json-only 忽略无关参数：{' '.join(unknown)}（重放模式不跑场景）", file=sys.stderr)
+    if not last_run.exists():
+        print(f"--json-only: 运行记录不存在 {last_run}", file=sys.stderr)
+        print("  先跑一次真实运行（--check/--update/--gallery，不带 --scene）生成记录。", file=sys.stderr)
+        return 2
+    try:
+        record = json.loads(last_run.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"--json-only: 记录不可解析 {last_run}: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(record, dict) or record.get("schema") != 1:
+        schema = record.get("schema") if isinstance(record, dict) else type(record).__name__
+        print(f"--json-only: 不支持的记录 schema {schema!r}（需要 1）", file=sys.stderr)
+        return 2
+    audit = record.get("audit") or {}
+    out.write_text(json.dumps(audit, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    summary = record.get("summary") or {}
+    print(f"--json-only: audit.json 已重放 {_rel_to_root(out)}（{len(audit)} 个场景）")
+    print(f"  来源: {_rel_to_root(last_run)}  recordedAt={record.get('recordedAt')}  url={record.get('url')}")
+    print(
+        f"  上次运行: FAIL={len(summary.get('failures') or [])}"
+        f" SKIP={len(summary.get('skips') or [])}"
+        f" exit={summary.get('exitCode')}"
+    )
+    return 0
+
+
+if "--json-only" in sys.argv[1:]:
+    sys.exit(_json_only_replay(sys.argv[1:]))
 
 # --- 解释器自举：系统 python3 可能缺 playwright/Pillow，找有依赖的解释器重执行 ---
 try:
@@ -181,6 +249,40 @@ INJECT_MODE = ""
 AUDIT: dict = {}          # scene → {theme, chromeBg, contentBg, contrast, pixels, …}，写 audit.json
 CONSOLE_ERRORS: list[str] = []
 CONSOLE_NOISE = ("css", "plugin", "jotai", "loadable", "deprecat")
+_RUN_META: dict = {}      # 本运行元数据（scene/ci/url），供 _write_last_run_record 落盘
+LAST_RUN_PATH = GALLERY_DIR / ".last-run.json"
+
+
+def _write_last_run_record(exit_code: int) -> None:
+    """全量运行结束时把结构化审计 + 摘要落盘为 .last-run.json（--json-only 的数据源）。
+
+    只在非单场景运行（scene=None）且确实跑到了场景（audit/failures/skips 非空）时写：
+    环境错误导致零输出的运行不覆盖记录，保留上一次可审阅的数据。写入失败不致命
+    （审计归档路径，不影响回归判定）。
+    """
+    if _RUN_META.get("scene") is not None:
+        return
+    if not (AUDIT or failures or skips):
+        return
+    record = {
+        "schema": 1,
+        "recordedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "mode": "inject" if INJECT_MODE else ("--update" if UPDATE_MODE else "--gallery" if GALLERY_MODE else "--check"),
+        "ci": bool(_RUN_META.get("ci")),
+        "url": _RUN_META.get("url"),
+        "audit": AUDIT,
+        "summary": {
+            "failures": list(failures),
+            "skips": list(skips),
+            "consoleErrors": list(CONSOLE_ERRORS),
+            "exitCode": exit_code,
+        },
+    }
+    try:
+        LAST_RUN_PATH.write_text(json.dumps(record, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        log(f"运行记录已写入 {_rel_to_root(LAST_RUN_PATH)}（--json-only 可离线重放）")
+    except OSError as exc:
+        log(f"运行记录写入失败（忽略）：{exc}")
 
 
 def log(msg: str) -> None:
@@ -575,7 +677,11 @@ def scene_rail(state: str) -> None:
         elif state == "icon":
             page.evaluate("() => document.querySelector('[data-testid=sidebar-rail-toggle]')?.click()")
             page.wait_for_timeout(700)
-        elif state == "peek":
+        elif state.startswith("peek"):
+            # "peek" 与 "peek_hold" 都要先走 toggle-click + hover 进出舞步：
+            # peek_hold 的 keydown 分支在 hold 期间会重新做一遍 hover 断言，
+            # 但前提是 rail 已处于 icon 态 —— 缺了这步 rail 停在 full 态，
+            # 悬停永不触发 peek（data-rail-peek 恒 None）。
             page.evaluate("() => document.querySelector('[data-testid=sidebar-rail-toggle]')?.click()")
             page.wait_for_timeout(600)
             rect = element_rect(page, '[data-sidebar="panel"]')
@@ -1457,6 +1563,7 @@ def main() -> int:
     GALLERY_MODE = args.gallery
     INJECT_MODE = args.inject_regression or ""
     BASE = args.url
+    _RUN_META.update(scene=args.scene, ci=bool(args.ci), url=BASE)
     if INJECT_MODE and (UPDATE_MODE or GALLERY_MODE):
         log(f"--inject-regression 与 --update/--gallery 互斥（注入会污染基线）")
         return FAIL_MISSING
@@ -1587,4 +1694,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        _rc = main()
+    except Exception:
+        # 崩溃的全量运行也留档（部分场景数据 + exit 70）：--json-only 离线审阅的
+        # 正是这种残缺数据。单场景运行仍不写（_write_last_run_record 内部判定）。
+        _write_last_run_record(70)
+        raise
+    _write_last_run_record(_rc)
+    sys.exit(_rc)

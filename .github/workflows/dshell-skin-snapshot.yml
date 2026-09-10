@@ -286,6 +286,22 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+      # 离线审阅链路：快照运行每次都把结构化审计落盘 .last-run.json（gitignore），
+      # 此处把它重放成 audit.json 并上传 —— 失败的运行也带上机器可读的
+      # 玻璃 alpha / 对比度 / console 错误数据，无需本地浏览器即可复核。
+      - name: Replay audit.json from last-run record (--json-only)
+        if: always()
+        run: python3 scripts/dshell-skin-snapshot.py --json-only
+
+      - name: Upload replayed audit.json
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
+        with:
+          name: dshell-skin-audit-${{ github.run_id }}
+          path: docs/dshell-skin-shots/audit.json
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Upload refreshed baselines (on explicit --update)
         # dispatch 重拍产物：下载后人工审阅并提交（与基线提交纪律一致）。
         # 含对比度元素基线 JSON（contrast-summary.json，同次重拍产物）。
