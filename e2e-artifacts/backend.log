@@ -65,3 +65,6 @@
 @bb/integration-tests:e2e:mobile-backend: (Use `node --trace-warnings ...` to show where the warning was created)
 @bb/integration-tests:e2e:mobile-backend: {"hostId":"49c3e107-59e7-485c-8199-a3e7d6e23b35","projectId":"proj_veufq5qs8b","serverUrl":"http://127.0.0.1:41999","threads":{"completed":"thr_gz93ntii9e","idle":"thr_bd9pudw63r","rich":"thr_wg28gznqif","rows":"thr_azzbitynrg"}}
 @bb/integration-tests:e2e:mobile-backend: mobile-e2e backend ready at http://127.0.0.1:41999 (Ctrl-C to stop)
+@bb/integration-tests:e2e:mobile-backend: mobile-e2e backend: SIGINT, shutting down
+@bb/integration-tests:e2e:mobile-backend: mobile-e2e backend: SIGINT, shutting down
+ ERROR  run failed: command  exited (1)
