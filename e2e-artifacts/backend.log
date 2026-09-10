@@ -4,28 +4,28 @@
 • Running e2e:mobile-backend in 1 packages
 • Remote caching disabled
 //:ensure-native-modules: cache bypass, force executing 5e97c81af5f1ef4f
-@bb/server:generate:bb-official-marketplace: cache hit, replaying logs 83aeced7ef197b85
-@bb/server:generate:bb-official-marketplace: 
-@bb/server:generate:bb-official-marketplace: > @bb/server@0.0.1 generate:bb-official-marketplace /Users/timcao/workspace/nextloop/bb-fork/apps/server
-@bb/server:generate:bb-official-marketplace: > node --conditions=source --import tsx scripts/generate-bb-official-marketplace.ts
-@bb/server:generate:bb-official-marketplace: 
 @bb/templates:generate:plugin-scaffold: cache hit, replaying logs 41c606f031f9c426
 @bb/templates:generate:plugin-scaffold: 
 @bb/templates:generate:plugin-scaffold: > @bb/templates@0.0.1 generate:plugin-scaffold /Users/timcao/workspace/nextloop/bb-fork/packages/templates
 @bb/templates:generate:plugin-scaffold: > node ./scripts/generate-plugin-scaffold.mjs
 @bb/templates:generate:plugin-scaffold: 
 @bb/templates:generate:templates: cache hit, replaying logs 973e6104889119e3
-@bb/plugin-build:generate: cache hit, replaying logs 1e4ab6ea2024243e
 @bb/templates:generate:templates: 
 @bb/templates:generate:templates: > @bb/templates@0.0.1 generate:templates /Users/timcao/workspace/nextloop/bb-fork/packages/templates
 @bb/templates:generate:templates: > node ./scripts/generate-templates.mjs
 @bb/templates:generate:templates: 
+@bb/plugin-build:generate: cache hit, replaying logs 1e4ab6ea2024243e
 @bb/plugin-build:generate: 
 @bb/plugin-build:generate: > @bb/plugin-build@0.0.1 generate /Users/timcao/workspace/nextloop/bb-fork/packages/plugin-build
 @bb/plugin-build:generate: > node ./scripts/generate-plugin-theme.mjs && node ./scripts/generate-runtime-export-manifest.mjs
 @bb/plugin-build:generate: 
 @bb/plugin-build:generate: plugin-theme.generated.ts up to date
 @bb/plugin-build:generate: wrote /Users/timcao/workspace/nextloop/bb-fork/packages/plugin-build/src/generated/runtime-export-manifest.generated.ts (react@19.2.4)
+@bb/server:generate:bb-official-marketplace: cache hit, replaying logs 83aeced7ef197b85
+@bb/server:generate:bb-official-marketplace: 
+@bb/server:generate:bb-official-marketplace: > @bb/server@0.0.1 generate:bb-official-marketplace /Users/timcao/workspace/nextloop/bb-fork/apps/server
+@bb/server:generate:bb-official-marketplace: > node --conditions=source --import tsx scripts/generate-bb-official-marketplace.ts
+@bb/server:generate:bb-official-marketplace: 
 @get-bb/plugin-sdk:build:types: cache hit, replaying logs 3553efdede9d6cb1
 @get-bb/plugin-sdk:build:types: 
 @get-bb/plugin-sdk:build:types: > @get-bb/plugin-sdk@0.4.40 build:types /Users/timcao/workspace/nextloop/bb-fork/packages/plugin-sdk
@@ -61,10 +61,7 @@
 @bb/integration-tests:e2e:mobile-backend: > @bb/integration-tests@0.0.1 e2e:mobile-backend /Users/timcao/workspace/nextloop/bb-fork/tests/integration
 @bb/integration-tests:e2e:mobile-backend: > cross-env NODE_ENV=test node --conditions=source --import tsx mobile-e2e/backend.ts
 @bb/integration-tests:e2e:mobile-backend: 
-@bb/integration-tests:e2e:mobile-backend: (node:34312) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+@bb/integration-tests:e2e:mobile-backend: (node:40936) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 @bb/integration-tests:e2e:mobile-backend: (Use `node --trace-warnings ...` to show where the warning was created)
-@bb/integration-tests:e2e:mobile-backend: {"hostId":"108ab4a8-e7c1-4e3d-a14a-cde0045668d5","projectId":"proj_hp45prpija","serverUrl":"http://127.0.0.1:41999","threads":{"completed":"thr_dnhgaheu3q","idle":"thr_vn68jq5wrk","rich":"thr_pacvrh2mas","rows":"thr_9b5ugtiepr"}}
+@bb/integration-tests:e2e:mobile-backend: {"hostId":"49c3e107-59e7-485c-8199-a3e7d6e23b35","projectId":"proj_veufq5qs8b","serverUrl":"http://127.0.0.1:41999","threads":{"completed":"thr_gz93ntii9e","idle":"thr_bd9pudw63r","rich":"thr_wg28gznqif","rows":"thr_azzbitynrg"}}
 @bb/integration-tests:e2e:mobile-backend: mobile-e2e backend ready at http://127.0.0.1:41999 (Ctrl-C to stop)
-@bb/integration-tests:e2e:mobile-backend: mobile-e2e backend: SIGINT, shutting down
-@bb/integration-tests:e2e:mobile-backend: mobile-e2e backend: SIGINT, shutting down
- ERROR  run failed: command  exited (1)
