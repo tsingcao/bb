@@ -238,6 +238,36 @@ interface HasVisibleTerminalSizeArgs {
   entries?: readonly ResizeObserverEntry[];
 }
 
+/**
+ * xterm 的 css.toColor 只接受 #hex / rgb() / 不透明色：半透明值（如 oklch(… / 0.4)）
+ * 走 canvas fallback 时读回 alpha≠255 会被判 "Unsupported css format"，M() 静默
+ * catch 后回退默认主题色 —— 选区因此渲染成默认灰白（white@0.3）而非 --dsh-term-selection。
+ * 这里用 canvas 2d 把任意浏览器可解析的颜色采样成 #rrggbbaa（xterm case-9 hex 支持
+ * alpha 位），让半透明令牌以可解析形式注入。采样失败时原样返回（保持旧行为）。
+ */
+function resolveColorToHex8(color: string): string {
+  if (typeof document === "undefined") {
+    return color;
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) {
+      return color;
+    }
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    const hex = (n: number) => n.toString(16).padStart(2, "0");
+    return `#${hex(r)}${hex(g)}${hex(b)}${hex(a)}`;
+  } catch {
+    return color;
+  }
+}
+
 function readResolvedCssColor(
   probe: HTMLElement,
   varName: string,
@@ -249,7 +279,7 @@ function readResolvedCssColor(
     return undefined;
   }
   probe.style.color = raw;
-  return getComputedStyle(probe).color;
+  return resolveColorToHex8(getComputedStyle(probe).color);
 }
 
 type TerminalCssColorReader = (name: string) => string | undefined;
