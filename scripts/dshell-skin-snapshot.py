@@ -175,6 +175,7 @@ CI_SCENES = (
     "migration_banner",
     "glass_tab_info", "glass_dark_terminal", "glass_light_terminal", "glass_anim",
     "app_terminal_dark", "app_terminal_light",
+    "host_compare",
 )
 
 # app_terminal_*（§12b 非面板宿主）需要：真实线程（种 split 上下文 → ⌘⇧Enter 落在
@@ -1035,6 +1036,160 @@ def scene_app_terminal(theme: str) -> None:
         browser.close()
 
 
+# ---------- 终端宿主导航级一致性（host-compare，§11+§12b 双宿主同源）------------
+# 设计：把 scripts/dshell-host-compare.py 的核心逻辑并成 scene_ 场景——右面板终端
+# （§11+§12b 宿主）与 root compose split-pane 终端（仅 §12b）各截一张终端区 PNG，
+# 像素级并排对比 + 锚点色断言。判定沿袭 dshell-host-compare.py 的阈值：
+#   * anchorMaxAbsDiff ≤ HOST_COMPARE_BG_TOL —— 两宿主画布底色同源（§12b 契约核心）
+#   * diffPct ≤ HOST_COMPARE_MAX_DIFF_PCT 且 meanAbsDiff ≤ HOST_COMPARE_MAX_MEAN_DIFF
+#     —— 文本/光标差异应远小于此（两宿主都跑真实 PTY，内容不可能逐像素相等）
+# 数据入 failures[] 随 --check 一起红；像素归档仍走 dshell-host-compare.py 的
+# host-compare/ 产物。需 BB_E2E_THREAD（面板宿主要线程路由）+ 真实 host daemon
+# （PTY），与 glass_dark_terminal 同级依赖。
+HOST_COMPARE_BG_TOL = 6
+HOST_COMPARE_MAX_DIFF_PCT = 12.0
+HOST_COMPARE_MAX_MEAN_DIFF = 6.0
+
+
+def host_compare_metrics(shot_a: Path, shot_b: Path) -> dict:
+    """两宿主终端区 PNG 的像素级对比（§12b 断言的唯一实现）。
+
+    scripts/dshell-host-compare.py 也 import 本函数 —— 阈值与锚点采样只在此处
+    维护一份。锚点内缩 2px：边缘 1px 是圆角/子像素 letterbox 边界，宿主间
+    border box 宽度可有 1px 舍入差（亮色下 letterbox 露出页面底色 → Δ240
+    假阳性），画布契约关心的是内部底色，不是抗锯齿边界。
+    """
+    a = Image.open(shot_a).convert("RGB")
+    b = Image.open(shot_b).convert("RGB")
+    if a.size != b.size:
+        # 宿主间 1px 级差异（滚动条/亚像素）：归一化到公共区域再比
+        w, h = min(a.width, b.width), min(a.height, b.height)
+        a = a.crop((0, 0, w, h))
+        b = b.crop((0, 0, w, h))
+    pa, pb = a.load(), b.load()
+    w, h = a.size
+    total = w * h
+    diff_px = 0
+    sum_abs = 0
+    anchors_a, anchors_b = [], []
+    for (ax, ay) in [(2, 2), (w - 3, 2), (2, h - 3), (w - 3, h - 3), (w // 2, h // 2)]:
+        anchors_a.append(pa[ax, ay])
+        anchors_b.append(pb[ax, ay])
+    for y in range(h):
+        for x in range(w):
+            ca, cb = pa[x, y], pb[x, y]
+            d = abs(ca[0] - cb[0]) + abs(ca[1] - cb[1]) + abs(ca[2] - cb[2])
+            sum_abs += d
+            if d > 36:  # 单通道差>12 → 差异像素
+                diff_px += 1
+    anchor_max = max(
+        max(abs(ca[i] - cb[i]) for i in range(3))
+        for ca, cb in zip(anchors_a, anchors_b)
+    )
+    return {
+        "size": list(a.size),
+        "meanAbsDiff": round(sum_abs / (total * 3), 3),
+        "diffPx": diff_px,
+        "diffPct": round(diff_px / total * 100, 3),
+        "anchorMaxAbsDiff": anchor_max,
+        "anchorsA": [list(c) for c in anchors_a],
+        "anchorsB": [list(c) for c in anchors_b],
+    }
+
+HOST_COMPARE_STATE_JS = """() => {
+  for (const xterm of [...document.querySelectorAll('.terminal.xterm')]) {
+    const r = xterm.getBoundingClientRect();
+    if (r.width < 20 || r.height < 20) continue;
+    const vp = xterm.closest('.xterm-viewport') || xterm.querySelector('.xterm-viewport') || xterm;
+    const v = vp.getBoundingClientRect();
+    const panel = xterm.closest('[data-panel-id]');
+    return {
+      viewport: { x: Math.round(v.x), y: Math.round(v.y), w: Math.round(v.width), h: Math.round(v.height) },
+      panelId: panel ? panel.getAttribute('data-panel-id') : null,
+      viewportBg: getComputedStyle(vp).backgroundColor,
+      backdrop: panel ? getComputedStyle(panel).backdropFilter : null,
+    };
+  }
+  return null;
+}"""
+
+
+def scene_host_compare() -> None:
+    scene = "host_compare"
+    if not THREAD:
+        skips.append(f"{scene}: 需 BB_E2E_THREAD（面板宿主要线程路由），跳过")
+        return
+
+    with playwright_sync() as page:
+        # --- 宿主 A：右面板终端（§11 + §12b） ---
+        boot(page, "on", "dark", THREAD)
+        if not open_terminal(page):
+            skips.append(f"{scene}: 右面板终端未能打开，跳过")
+            return
+        page.wait_for_timeout(2500)
+        tA = page.evaluate(HOST_COMPARE_STATE_JS)
+        if tA is None:
+            failures.append(f"{scene}/panel: 面板宿主终端不可见")
+            return
+        shotA = Path("/tmp") / f"{scene}__panel.png"
+        capture_region(page, str(shotA), tA["viewport"])
+        log(f"  [info] {scene}/panel  panelId={tA['panelId']} bg={tA['viewportBg']}")
+        close_terminal(page)
+
+        # --- 宿主 B：root compose split-pane 终端（仅 §12b） ---
+        page.goto(BASE + "/", wait_until="domcontentloaded", timeout=60000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+        if not open_compose_terminal(page):
+            skips.append(f"{scene}: compose 终端未能打开，跳过")
+            return
+        page.wait_for_timeout(3000)
+        tB = page.evaluate(HOST_COMPARE_STATE_JS)
+        if tB is None:
+            failures.append(f"{scene}/compose: compose 宿主终端不可见")
+            return
+        shotB = Path("/tmp") / f"{scene}__compose.png"
+        capture_region(page, str(shotB), tB["viewport"])
+        log(f"  [info] {scene}/compose  panelId={tB['panelId']} bg={tB['viewportBg']}")
+
+        # --- 像素对比（host_compare_metrics：与 dshell-host-compare.py 共用同一实现） ---
+        m = host_compare_metrics(shotA, shotB)
+        anchor_max = m["anchorMaxAbsDiff"]
+        mean_abs = m["meanAbsDiff"]
+        diff_pct = m["diffPct"]
+
+        bg_ok = anchor_max <= HOST_COMPARE_BG_TOL
+        diff_ok = diff_pct <= HOST_COMPARE_MAX_DIFF_PCT and mean_abs <= HOST_COMPARE_MAX_MEAN_DIFF
+        if not bg_ok:
+            failures.append(
+                f"{scene}/anchors: 两宿主画布锚点色差 {anchor_max} > {HOST_COMPARE_BG_TOL}（§12b 画布色契约破坏）"
+            )
+        if not diff_ok:
+            failures.append(
+                f"{scene}/pixels: 差异 {diff_pct}% / meanAbs {mean_abs} 超限"
+                f"（{HOST_COMPARE_MAX_DIFF_PCT}% / {HOST_COMPARE_MAX_MEAN_DIFF}）"
+            )
+        log(
+            f"  [{'PASS' if bg_ok and diff_ok else 'FAIL'}] {scene}/compare"
+            f"  anchorMax={anchor_max} diffPct={diff_pct}% meanAbs={mean_abs}"
+            f"  size={a.size[0]}x{a.size[1]}"
+        )
+        record_audit(
+            scene,
+            "dark",
+            {
+                "panelIdA": tA["panelId"],
+                "panelIdB": tB["panelId"],
+                "anchorMaxAbsDiff": anchor_max,
+                "diffPct": diff_pct,
+                "meanAbsDiff": mean_abs,
+            },
+        )
+
+
 def open_terminal(page) -> bool:
     """在右面板打开真实终端（harness / dev server 通用）。
 
@@ -1632,6 +1787,10 @@ def main() -> int:
         for theme in ("dark", "light"):
             if want(f"app_terminal_{theme}"):
                 scene_app_terminal(theme)
+        # 双宿主终端一致性（host-compare）：右面板 vs compose split-pane 画布同源。
+        # 需线程 + 真实 PTY，与 glass_dark_terminal 同级依赖。
+        if want("host_compare"):
+            scene_host_compare()
     if want("glass_anim"):
         if THREAD:
             scene_glass_anim()

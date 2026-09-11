@@ -7,295 +7,120 @@ letterbox）在每个宿主都一致渲染；§11/§13 玻璃链用 `[data-panel
   docs/dshell-skin-shots/host-compare/
     panel.png           右面板终端（§11+§12b 宿主）
     compose.png         compose/split-pane 终端（§11+§12b 宿主，前缀匹配后与主面板一致）
-    side-by-side.png    1920 并排合成图
+    side-by-side.png    并排合成图
     diff.png            差异高亮图（红色=差异像素）
-    report.json         尺寸/锚点色/背景计算样式/像素差异指标/bbox
+    report.json         尺寸/锚点色/像素差异指标/bbox
 
 退出码：0 = 背景一致且差异在阈值内；1 = 背景不一致（§12b 契约破坏，如画布色不同）
 或差异超限。CI 可挂 --check。
+
+用法：python scripts/dshell-host-compare.py [--theme dark|light]
+  --theme light 走亮色外观（html.light），产出归档到 host-compare/light/ 子目录，
+  与暗色基线互不覆盖；两外观各自成对，§12b 画布契约在两态下分别断言。
+
+单一事实来源（避免两处维护）：种子上下文（boot）、右面板终端打开流程
+（open_terminal）、compose 终端打开流程（open_compose_terminal）、宿主状态 JS、
+像素对比实现（host_compare_metrics）与判定阈值全部复用
+scripts/dshell-skin-snapshot.py —— 本脚本只做「运行两个宿主 + 归档产物 + 独立退出码」。
 """
 from __future__ import annotations
 
+import argparse
+import importlib.util
 import json
-import re
 import sys
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+OUT_DIR = _SCRIPTS_DIR.parent / "docs" / "dshell-skin-shots" / "host-compare"
 
-BASE = "http://127.0.0.1:18154"
-THREAD = "/projects/proj_piv8e7jmz9/threads/thr_my785vjuev"
-OUT_DIR = Path(__file__).resolve().parent.parent / "docs" / "dshell-skin-shots" / "host-compare"
 
-MAX_MEAN_DIFF = 6.0     # 平均绝对差上限（0-255）：文本/光标差异应远小于此
-MAX_DIFF_PCT = 12.0     # 差异像素(>12/255)占比上限 %：两宿主画布底色一致时文本占比应远小于此
-BG_TOL = 6              # 四角+中心锚点色差上限 /255
+def _load_snapshot():
+    """importlib 加载 dshell-skin-snapshot.py（上线代码，非复制品）。
 
-PANEL_ASIDE_JS = """() => {
-  const vw = innerWidth;
-  return [...document.querySelectorAll('[data-panel-id="thread-detail-secondary-panel"] aside')]
-    .find(a => { const r = a.getBoundingClientRect(); return r.width > 150 && r.right > 80 && r.left < vw && r.bottom > 50; }) || null;
-}"""
+    该模块 import 时会做解释器自举（系统 python3 缺 playwright/Pillow 时 os.execv
+    重执行）——execv 只发生在依赖缺失的解释器里，此处同解释器 import 等价于
+    直接执行脚本的前置段。加载失败即明确报错退出，不静默降级。
+    """
+    path = _SCRIPTS_DIR / "dshell-skin-snapshot.py"
+    spec = importlib.util.spec_from_file_location("dshell_skin_snapshot", path)
+    if spec is None or spec.loader is None:
+        print(f"FAIL: 无法加载 {path}", file=sys.stderr)
+        sys.exit(2)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def log(msg: str) -> None:
     print(msg, flush=True)
 
 
-def boot_thread(page) -> None:
-    page.goto(BASE + "/", wait_until="domcontentloaded", timeout=60000)
-    page.evaluate(
-        """() => {
-          try { localStorage.setItem("bb.dshell.enabled", "on"); } catch {}
-          document.documentElement.classList.remove("dark", "light", "dshell");
-        }"""
-    )
-    page.goto(BASE + THREAD, wait_until="domcontentloaded", timeout=60000)
-    try:
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except Exception:
-        pass
-    page.wait_for_timeout(3500)
-    page.evaluate("""() => { const h = document.documentElement; h.classList.remove("dark","light"); h.classList.add("dark"); }""")
-    page.wait_for_timeout(900)
-
-
-def boot_compose(page) -> None:
-    page.goto(BASE + "/", wait_until="domcontentloaded", timeout=60000)
-    try:
-        page.wait_for_load_state("networkidle", timeout=10000)
-    except Exception:
-        pass
-    page.wait_for_timeout(3000)
-    page.evaluate("""() => { const h = document.documentElement; h.classList.remove("dark","light"); h.classList.add("dark"); }""")
-    page.wait_for_timeout(600)
-
-
-def open_panel_terminal(page) -> bool:
-    # 右面板常驻展开时直接走 shell/Start terminal 流程；若几次不成功，
-    # 用 ⌘J 重置一次面板状态（面板默认宽度 1px 收合时必需）。
-    for attempt in range(3):
-        ok = _open_panel_terminal_once(page, rounds=14)
-        if ok:
-            return True
-        page.keyboard.press("Meta+J")
-        page.wait_for_timeout(1500)
-    return False
-
-
-def _open_panel_terminal_once(page, rounds: int) -> bool:
-    for _ in range(rounds):
-        has = page.evaluate(
-            """() => {
-              const vw = innerWidth;
-              const f = [...document.querySelectorAll('[data-panel-id="thread-detail-secondary-panel"] aside')]
-                .find(a => { const r = a.getBoundingClientRect(); return r.width > 150 && r.right > 80 && r.left < vw && r.bottom > 50; });
-              return !!f && !!f.querySelector(".terminal.xterm");
-            }"""
-        )
-        if has:
-            return True
-        page.evaluate(
-            """() => {
-              const vw = innerWidth;
-              const f = [...document.querySelectorAll('[data-panel-id="thread-detail-secondary-panel"] aside')]
-                .find(a => { const r = a.getBoundingClientRect(); return r.width > 150 && r.right > 80 && r.left < vw && r.bottom > 50; });
-              if (!f) return;
-              const vis = [...f.querySelectorAll("button")].filter(x => {
-                const r = x.getBoundingClientRect(); const t = (x.textContent || "").trim();
-                return /^(zsh|bash|fish|sh)$/.test(t) && r.width > 2 && r.height > 2;
-              });
-              if (vis.length) { vis[vis.length - 1].click(); return; }
-              const nt = [...f.querySelectorAll("button")].find(x =>
-                (x.getAttribute("aria-label") || "").startsWith("Open new tab"));
-              if (nt) nt.click();
-            }"""
-        )
-        page.wait_for_timeout(1400)
-        act = page.get_by_role("button", name=re.compile("Start terminal", re.I))
-        if act.count():
-            act.first.click()
-        page.wait_for_timeout(1500)
-    return False
-
-
-def find_terminal(page):
-    """返回可见 xterm 的 rect + 宿主链信息，或 None。"""
-    return page.evaluate(
-        """() => {
-          for (const xterm of [...document.querySelectorAll('.terminal.xterm')]) {
-            const r = xterm.getBoundingClientRect();
-            if (r.width < 20 || r.height < 20) continue;
-            const vp = xterm.closest('.xterm-viewport') || xterm.querySelector('.xterm-viewport') || xterm;
-            const v = vp.getBoundingClientRect();
-            const panel = xterm.closest('[data-panel-id]');
-            const cs = getComputedStyle(vp);
-            const rootCs = panel ? getComputedStyle(panel) : null;
-            return {
-              xterm: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
-              viewport: { x: Math.round(v.x), y: Math.round(v.y), w: Math.round(v.width), h: Math.round(v.height) },
-              dataAppTerminal: !!xterm.closest('[data-app-terminal]'),
-              htmlDshell: document.documentElement.classList.contains('dshell'),
-              htmlDark: document.documentElement.classList.contains('dark'),
-              panelId: panel ? panel.getAttribute('data-panel-id') : null,
-              viewportBg: cs.backgroundColor,
-              panelBackdrop: rootCs ? rootCs.backdropFilter : null,
-            };
-          }
-          return null;
-        }"""
-    )
-
-
-def capture(page, rect: dict, path: Path) -> None:
-    page.screenshot(
-        path=str(path),
-        clip={
-            "x": rect["x"],
-            "y": rect["y"],
-            "width": rect["w"],
-            "height": rect["h"],
-        },
-    )
-
-
-def compare(path_a: Path, path_b: Path):
-    from PIL import Image
-
-    a = Image.open(path_a).convert("RGB")
-    b = Image.open(path_b).convert("RGB")
-    if a.size != b.size:
-        # 宿主间 1px 级差异（滚动条/亚像素）：归一化到公共区域再比
-        w, h = min(a.width, b.width), min(a.height, b.height)
-        a = a.crop((0, 0, w, h))
-        b = b.crop((0, 0, w, h))
-    pa, pb = a.load(), b.load()
-    w, h = a.size
-    total = w * h
-    diff_px = 0
-    sum_abs = 0
-    min_x, min_y, max_x, max_y = w, h, -1, -1
-    anchors_a, anchors_b = [], []
-    for (ax, ay) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (w // 2, h // 2)]:
-        anchors_a.append(pa[ax, ay])
-        anchors_b.append(pb[ax, ay])
-    for y in range(h):
-        for x in range(w):
-            ca, cb = pa[x, y], pb[x, y]
-            d = abs(ca[0] - cb[0]) + abs(ca[1] - cb[1]) + abs(ca[2] - cb[2])
-            sum_abs += d
-            if d > 36:  # 单通道差>12 → 差异像素
-                diff_px += 1
-                if x < min_x:
-                    min_x = x
-                if x > max_x:
-                    max_x = x
-                if y < min_y:
-                    min_y = y
-                if y > max_y:
-                    max_y = y
-    anchor_max = max(
-        max(abs(ca[i] - cb[i]) for i in range(3))
-        for ca, cb in zip(anchors_a, anchors_b)
-    )
-    return {
-        "size": list(a.size),
-        "meanAbsDiff": round(sum_abs / (total * 3), 3),
-        "diffPx": diff_px,
-        "diffPct": round(diff_px / total * 100, 3),
-        "bbox": None if max_x < 0 else [min_x, min_y, max_x - min_x + 1, max_y - min_y + 1],
-        "anchorMaxAbsDiff": anchor_max,
-        "anchorsA": [list(c) for c in anchors_a],
-        "anchorsB": [list(c) for c in anchors_b],
-    }
-
-
-def draw_diff(path_a: Path, path_b: Path, out: Path) -> None:
-    from PIL import Image
-
-    a = Image.open(path_a).convert("RGB")
-    b = Image.open(path_b).convert("RGB")
-    pa, pb = a.load(), b.load()
-    w, h = a.size
-    for y in range(h):
-        for x in range(w):
-            ca, cb = pa[x, y], pb[x, y]
-            if abs(ca[0] - cb[0]) + abs(ca[1] - cb[1]) + abs(ca[2] - cb[2]) > 36:
-                pa[x, y] = (255, 40, 60)
-    a.save(out)
-
-
 def main() -> int:
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    report: dict = {"base": BASE, "thread": THREAD, "hosts": {}}
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        # 同一 context 的两个页面：localStorage（皮肤偏好）天然共享，与真实多标签一致
-        context = browser.new_context(viewport={"width": 1920, "height": 1000})
-        # --- 宿主 A：右面板终端（§11 + §12b） ---
-        page = context.new_page()
-        boot_thread(page)
-        if not open_panel_terminal(page):
+    ap = argparse.ArgumentParser(description="dshell 终端宿主并排像素对比")
+    ap.add_argument("--theme", choices=("dark", "light"), default="dark",
+                    help="外观（默认 dark；light 归档到 host-compare/light/）")
+    args = ap.parse_args()
+    theme = args.theme
+
+    snap = _load_snapshot()
+    from PIL import Image
+
+    thread = snap.THREAD
+    if not thread:
+        print("FAIL: 需 BB_E2E_THREAD（面板宿主要线程路由）", file=sys.stderr)
+        return 2
+
+    out_dir = OUT_DIR / theme if theme == "light" else OUT_DIR
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report: dict = {"base": snap.BASE, "thread": thread, "theme": theme, "hosts": {}}
+
+    with snap.playwright_sync() as page:
+        # --- 宿主 A：右面板终端（§11 + §12b）---
+        snap.boot(page, "on", theme, thread)
+        if not snap.open_terminal(page):
             log("FAIL: 右面板终端未能打开")
-            browser.close()
             return 1
         page.wait_for_timeout(2500)
-        tA = find_terminal(page)
+        tA = page.evaluate(snap.HOST_COMPARE_STATE_JS)
         log(f"panel host: {tA}")
         if tA is None:
-            browser.close()
             return 1
-        shotA = OUT_DIR / "panel.png"
-        capture(page, tA["viewport"], shotA)
+        shotA = out_dir / "panel.png"
+        snap.capture_region(page, str(shotA), tA["viewport"])
         report["hosts"]["panel"] = tA
-        page.close()
+        snap.close_terminal(page)
 
-        # --- 宿主 B：root compose split pane 终端（仅 §12b） ---
-        page = context.new_page()
-        boot_compose(page)
-        stB = page.evaluate(
-            """() => ({ stored: localStorage.getItem('bb.dshell.enabled'),
-                        ds: document.documentElement.classList.contains('dshell'),
-                        dark: document.documentElement.classList.contains('dark') })"""
-        )
-        log(f"compose boot state: {stB}")
-        page.keyboard.press("Meta+Shift+Enter")
-        page.wait_for_timeout(8000)
-        tB = find_terminal(page)
+        # --- 宿主 B：root compose split-pane 终端（仅 §12b）---
+        snap.boot(page, "on", theme, "/")
+        if not snap.open_compose_terminal(page):
+            log("FAIL: compose 终端未能打开")
+            return 1
+        page.wait_for_timeout(3000)
+        tB = page.evaluate(snap.HOST_COMPARE_STATE_JS)
         log(f"compose host: {tB}")
         if tB is None:
-            browser.close()
             return 1
-        shotB = OUT_DIR / "compose.png"
-        capture(page, tB["viewport"], shotB)
+        shotB = out_dir / "compose.png"
+        snap.capture_region(page, str(shotB), tB["viewport"])
         # 稳定性质检：3s 后再截一次，锚点色应不变（排除首帧未绘制）
         page.wait_for_timeout(3000)
-        tB2 = find_terminal(page)
+        tB2 = page.evaluate(snap.HOST_COMPARE_STATE_JS)
         if tB2:
-            probe = OUT_DIR / "compose_probe2.png"
-            capture(page, tB2["viewport"], probe)
-            from PIL import Image as _I
-
-            px1 = _I.open(shotB).convert("RGB").load()
-            px2 = _I.open(probe).convert("RGB").load()
+            probe = out_dir / "compose_probe2.png"
+            snap.capture_region(page, str(probe), tB2["viewport"])
+            px1 = Image.open(shotB).convert("RGB").load()
+            px2 = Image.open(probe).convert("RGB").load()
             c1 = px1[tB["viewport"]["w"] // 2, tB["viewport"]["h"] // 2]
             c2 = px2[tB2["viewport"]["w"] // 2, tB2["viewport"]["h"] // 2]
             log(f"compose canvas center: t0={c1} t3s={c2}")
             probe.unlink()
         report["hosts"]["compose"] = tB
-        page.close()
-        context.close()
-        browser.close()
 
-    # --- 像素级并排对比 ---
-    cmp = compare(shotA, shotB)
+    # --- 像素级并排对比（与 snapshot 的 host_compare 场景同一实现、同一阈值）---
+    cmp = snap.host_compare_metrics(shotA, shotB)
     report["compare"] = cmp
     log(f"compare: {cmp}")
-    if "error" in cmp:
-        (OUT_DIR / "report.json").write_text(json.dumps(report, indent=2))
-        return 1
-
-    from PIL import Image
 
     a = Image.open(shotA)
     b = Image.open(shotB)
@@ -304,22 +129,32 @@ def main() -> int:
     canvas = Image.new("RGB", (w * 2 + 8, h + 12), (18, 18, 28))
     canvas.paste(a, (0, 6))
     canvas.paste(b, (w + 8, 6))
-    canvas.save(OUT_DIR / "side-by-side.png")
-    draw_diff(shotA, shotB, OUT_DIR / "diff.png")
+    canvas.save(out_dir / "side-by-side.png")
+    diff_img = a.convert("RGB")
+    pa, pb = diff_img.load(), b.convert("RGB").load()
+    for y in range(min(diff_img.height, b.height)):
+        for x in range(min(diff_img.width, b.width)):
+            ca, cb = pa[x, y], pb[x, y]
+            if abs(ca[0] - cb[0]) + abs(ca[1] - cb[1]) + abs(ca[2] - cb[2]) > 36:
+                pa[x, y] = (255, 40, 60)
+    diff_img.save(out_dir / "diff.png")
 
-    (OUT_DIR / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
-    log(f"archived → {OUT_DIR}")
+    (out_dir / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    log(f"archived → {out_dir}")
 
-    # --- 判定 ---
-    bg_ok = cmp["anchorMaxAbsDiff"] <= BG_TOL
-    diff_ok = cmp["diffPct"] <= MAX_DIFF_PCT and cmp["meanAbsDiff"] <= MAX_MEAN_DIFF
+    # --- 判定（阈值与 snapshot 的 host_compare 场景同源）---
+    bg_ok = cmp["anchorMaxAbsDiff"] <= snap.HOST_COMPARE_BG_TOL
+    diff_ok = (
+        cmp["diffPct"] <= snap.HOST_COMPARE_MAX_DIFF_PCT
+        and cmp["meanAbsDiff"] <= snap.HOST_COMPARE_MAX_MEAN_DIFF
+    )
     if not bg_ok:
-        log(f"FAIL: 两宿主画布锚点色差 {cmp['anchorMaxAbsDiff']} > {BG_TOL}（§12b 画布色契约破坏）")
+        log(f"FAIL: 两宿主画布锚点色差 {cmp['anchorMaxAbsDiff']} > {snap.HOST_COMPARE_BG_TOL}（§12b 画布色契约破坏）")
         return 1
     if not diff_ok:
         log(
             f"FAIL: 差异 {cmp['diffPct']}% / meanAbs {cmp['meanAbsDiff']} 超限"
-            f"（{MAX_DIFF_PCT}% / {MAX_MEAN_DIFF}）"
+            f"（{snap.HOST_COMPARE_MAX_DIFF_PCT}% / {snap.HOST_COMPARE_MAX_MEAN_DIFF}）"
         )
         return 1
     log(f"PASS: 画布锚点一致（Δ={cmp['anchorMaxAbsDiff']}），差异 {cmp['diffPct']}% 在阈值内")

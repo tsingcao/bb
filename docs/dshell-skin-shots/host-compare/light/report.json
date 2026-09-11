@@ -1,7 +1,7 @@
 {
   "base": "http://127.0.0.1:18154",
   "thread": "/projects/proj_piv8e7jmz9/threads/thr_my785vjuev",
-  "theme": "dark",
+  "theme": "light",
   "hosts": {
     "panel": {
       "xterm": {
@@ -18,7 +18,7 @@
       },
       "dataAppTerminal": true,
       "htmlDshell": true,
-      "htmlDark": true,
+      "htmlDark": false,
       "panelId": "thread-detail-secondary-panel",
       "viewportBg": "rgba(0, 0, 0, 0)",
       "panelBackdrop": "blur(22px) saturate(1.4)"
@@ -38,7 +38,7 @@
       },
       "dataAppTerminal": true,
       "htmlDshell": true,
-      "htmlDark": true,
+      "htmlDark": false,
       "panelId": "thread-detail-secondary-panel-pane-2",
       "viewportBg": "rgba(0, 0, 0, 0)",
       "panelBackdrop": "blur(22px) saturate(1.4)"
@@ -49,68 +49,68 @@
       784,
       924
     ],
-    "meanAbsDiff": 0.106,
-    "diffPx": 515,
-    "diffPct": 0.071,
+    "meanAbsDiff": 0.398,
+    "diffPx": 1436,
+    "diffPct": 0.198,
     "bbox": [
       147,
       0,
-      84,
-      14
+      637,
+      924
     ],
     "anchorMaxAbsDiff": 0,
     "anchorsA": [
       [
-        116,
-        121,
+        117,
+        122,
         129
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ]
     ],
     "anchorsB": [
       [
-        116,
-        121,
+        117,
+        122,
         129
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ],
       [
-        8,
-        11,
-        18
+        9,
+        13,
+        20
       ]
     ]
   }
