@@ -90,7 +90,9 @@
       "files": [
         "apps/app/src/lib/sidebar-messages.ts",
         "apps/app/src/lib/keyboard-settings-messages.ts",
-        "apps/app/src/lib/palette-messages.ts"
+        "apps/app/src/lib/palette-messages.ts",
+        "apps/app/src/lib/dshell-panel-perf.ts",
+        "apps/app/src/lib/dshell-panel-perf.test.ts"
       ],
       "rules": {
         "bb/no-comments": "off"
