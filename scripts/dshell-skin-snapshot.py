@@ -176,7 +176,12 @@ CI_SCENES = (
     "glass_tab_info", "glass_dark_terminal", "glass_light_terminal", "glass_anim",
     "app_terminal_dark", "app_terminal_light",
     "host_compare",
+    "drawer_shelf",
 )
+
+# drawer_shelf_*（§11b 抽屉玻璃 + 纯 §12b letterbox）需要：真实线程（抽屉挂线程
+# route）+ host daemon（PTY）。CI harness 的固定种子线程 + 真实 host daemon 满足；
+# 无线程时脚本内自动 skip。compact ≤767px 用 390×844 手机口径。
 
 # app_terminal_*（§12b 非面板宿主）需要：真实线程（种 split 上下文 → ⌘⇧Enter 落在
 # -pane-2 而非 §11 玻璃面板）+ host daemon（PTY）。CI harness 的固定种子线程 + 真实
@@ -196,6 +201,7 @@ GALLERY_SCENES = [
     "glass_tab_info_light", "glass_tab_diff_light", "glass_tab_sidechat_light",
     "term_canvas_dark", "term_canvas_light", "term_canvas_off",
     "app_terminal_dark", "app_terminal_light",
+    "drawer_shelf_dark", "drawer_shelf_light",
 ]
 
 MAX_DIFF_PCT = 0.5   # 差异像素(>12/255)占比上限 %
@@ -1114,6 +1120,241 @@ HOST_COMPARE_STATE_JS = """() => {
 }"""
 
 
+def open_drawer_terminal(page) -> bool:
+    """在抽屉（[data-secondary-panel-shelf]）内打开真实终端。
+
+    与 open_terminal 同构，但锚点是 shelf 容器（抽屉形态无 data-panel-id，
+    §11 玻璃链选择器不命中——这正是本场景要覆盖的纯 §12b 宿主）。
+    """
+    for _ in range(16):
+        has = page.evaluate(
+            """() => {
+              const s = document.querySelector('[data-secondary-panel-shelf]');
+              if (!s) return false;
+              const x = s.querySelector('.terminal.xterm');
+              if (x) { const r = x.getBoundingClientRect(); return r.width > 100 && r.height > 100; }
+              return false;
+            }"""
+        )
+        if has:
+            return True
+        page.evaluate(
+            """() => {
+              const s = document.querySelector('[data-secondary-panel-shelf]');
+              if (!s) return;
+              const vis = [...s.querySelectorAll("button")].filter(x => {
+                const r = x.getBoundingClientRect(); const t = (x.textContent || "").trim();
+                return /^(zsh|bash|fish|sh)$/.test(t) && r.width > 2 && r.height > 2;
+              });
+              if (vis.length) { vis[vis.length - 1].click(); return; }
+              // 无 shell 按钮：切到 new-tab 视图找 Start terminal 入口
+              const nt = [...s.querySelectorAll("button")].find(x =>
+                (x.getAttribute("aria-label") || "").startsWith("Open new tab"));
+              if (nt) nt.click();
+            }"""
+        )
+        page.wait_for_timeout(1400)
+        act = page.get_by_role("button", name=re.compile("Start terminal", re.I))
+        if act.count():
+            act.first.click()
+        page.wait_for_timeout(1500)
+    return False
+
+
+# ---------- 抽屉形态（§11b shelf 玻璃 + 纯 §12b letterbox 宿主）--------------------
+# 设计：compact ≤767px 下 ThreadSecondaryPanel 走 renderAsDrawer，由
+# CompactSecondaryPanelShelf 以 portal 覆盖。抽屉没有 data-panel-id 根：
+# (a) §11b 把 shelf 容器当作抽屉自己的根 —— 断言玻璃（blur + 半透明底 +
+#     aside 透明 + 青色发丝左边框，state=full 全宽态去框）；
+# (b) §11 的 letterbox 透明覆盖链选择器不命中 → xterm viewport 落到纯 §12b
+#     规则 background-color: var(--dsh-term-bg) —— 与 inline 面板宿主
+#     （viewport 透明、画布色由 xterm 逐格绘制）不同源，这是抽屉独有的
+#     letterbox 断言，也是 §12b 规则唯一能脱离 [data-app-terminal] 面板
+#     链条独立生效的宿主组合。
+# 需真实线程（抽屉挂在线程 route 上）+ host daemon（PTY 开终端）。
+DRAWER_STATE_JS = r"""() => {
+  const shelf = document.querySelector('[data-secondary-panel-shelf]');
+  if (!shelf) return null;
+  const st = getComputedStyle(shelf);
+  const aside = shelf.querySelector('aside');
+  const acs = aside ? getComputedStyle(aside) : null;
+  const xterm = shelf.querySelector('.terminal.xterm');
+  let vp = null;
+  if (xterm) vp = xterm.closest('.xterm-viewport') || xterm.querySelector('.xterm-viewport');
+  return {
+    state: shelf.getAttribute('data-state'),
+    shelfBg: st.backgroundColor,
+    shelfBlur: st.backdropFilter || st.webkitBackdropFilter || '',
+    borderLeftW: st.borderLeftWidth,
+    borderLeftC: st.borderLeftColor,
+    asideBg: acs ? acs.backgroundColor : null,
+    hasXterm: !!xterm,
+    vpBg: vp ? getComputedStyle(vp).backgroundColor : null,
+    termBgVar: getComputedStyle(document.documentElement).getPropertyValue('--dsh-term-bg').trim(),
+  };
+}"""
+
+
+def scene_drawer_shelf(theme: str) -> None:
+    """compact ≤767px 抽屉形态：§11b shelf 玻璃 + §12b letterbox（--dsh-term-bg）。"""
+    scene = f"drawer_shelf_{theme}"
+    if not THREAD:
+        skips.append(f"{scene}: 需 BB_E2E_THREAD（抽屉挂线程 route），跳过")
+        return
+    from playwright.sync_api import sync_playwright as _sync_pw
+
+    with _sync_pw() as pw:
+        browser = pw.chromium.launch()
+        # compact 断点 = (max-width: 767px)，用 390×844 手机口径
+        ctx = browser.new_context(viewport={"width": 390, "height": 844})
+        page = ctx.new_page()
+        page.set_default_timeout(30000)
+        boot(page, "on", theme, THREAD)
+        # compact 下 ThreadDetailHeader 的开关在面板关闭时常驻（showRightPanelToggle）。
+        # 注意 shelf 元素即使 state=closed 也常驻 portal DOM → 必须断言 state 值，
+        # 而非元素存在性。
+        opened = False
+        for _ in range(10):
+            st0 = page.evaluate(DRAWER_STATE_JS)
+            if st0 and st0["state"] != "closed":
+                opened = True
+                break
+            page.evaluate(
+                """() => { const b = [...document.querySelectorAll('button')]
+                  .find(x => (x.getAttribute('aria-label') || '').startsWith('Show right panel'));
+                  if (b) b.click(); }"""
+            )
+            page.wait_for_timeout(1200)
+        if not opened:
+            skips.append(f"{scene}: compact 下抽屉未能打开，跳过")
+            ctx.close()
+            browser.close()
+            return
+        st = page.evaluate(DRAWER_STATE_JS)
+        if st is None:
+            failures.append(f"{scene}: shelf 状态不可读")
+            ctx.close()
+            browser.close()
+            return
+        # 1) §11b 玻璃：blur + 半透明底（aside 断言延后到抽屉 realize 后）
+        ok = "blur(" in st["shelfBlur"]
+        if not ok:
+            failures.append(f"{scene}/glass: shelf 缺 §11b backdrop blur={st['shelfBlur']!r}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/glass  blur={st['shelfBlur']} state={st['state']}")
+        m = re.search(r"rgba?\([^)]*\)", st["shelfBg"] or "")
+        alpha = 1.0
+        m = re.search(r"/\s*([\d.]+)\s*\)", st["shelfBg"] or "")
+        if m:
+            try:
+                alpha = float(m.group(1))
+            except ValueError:
+                pass
+        ok = 0.3 <= alpha < 1.0
+        if not ok:
+            failures.append(f"{scene}/glass: shelf 底应为半透明（72% 档），alpha={alpha} bg={st['shelfBg']}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/glass-alpha  bg={st['shelfBg']} alpha={alpha}")
+        ok = st["asideBg"] in ("rgba(0, 0, 0, 0)", "transparent")
+        if not ok:
+            failures.append(f"{scene}/aside: aside 应透明（§11b），bg={st['asideBg']!r}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/aside  bg={st['asideBg']}")
+        # 2) 青色发丝左边框（仅 shelf 态；full 全宽态 §11b 去框）
+        if st["state"] == "shelf":
+            ok = st["borderLeftW"] == "1px" and st["borderLeftC"] not in (None, "", "transparent")
+            if not ok:
+                failures.append(f"{scene}/hairline: state=shelf 应有 1px 左边框，got {st['borderLeftW']} {st['borderLeftC']}")
+            log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/hairline  {st['borderLeftW']} {st['borderLeftC']}")
+        else:
+            log(f"  [info] {scene}/hairline  state={st['state']}（full 全宽态，§11b 去框，跳过）")
+        # 3) §12b letterbox：抽屉内开终端，viewport 底色 == --dsh-term-bg（非透明！）
+        # aside 透明断言也放在这里：state=closed 时 drawerPanel 未 realize（fallback），
+        # 只有抽屉真正展开并 realizes aside 后 §11b 的 aside 规则才生效。
+        ok = st["asideBg"] in ("rgba(0, 0, 0, 0)", "transparent")
+        if not ok:
+            failures.append(f"{scene}/aside: aside 应透明（§11b），bg={st['asideBg']!r} state={st['state']}")
+        log(f"  [{'PASS' if ok else 'FAIL'}] {scene}/aside  bg={st['asideBg']} state={st['state']}")
+        if open_drawer_terminal(page):
+            st = page.evaluate(DRAWER_STATE_JS)
+            vp = st.get("vpBg") or ""
+            var_raw = st.get("termBgVar") or ""
+            # 两端都过 canvas 归一化：computed style 序列化可能是 oklch(...)（非 rgba），
+            # 直接字符串比对会把同一颜色误判为不等。
+            vp_rgb = page.evaluate(
+                """(v) => { const c = document.createElement('canvas'); c.width = c.height = 1;
+                  const x = c.getContext('2d', { willReadFrequently: true });
+                  x.clearRect(0,0,1,1); x.fillStyle = v; x.fillRect(0,0,1,1);
+                  const d = x.getImageData(0,0,1,1).data; return [d[0],d[1],d[2]]; }""",
+                vp,
+            )
+            ctx2 = page.evaluate(
+                """(v) => { const c = document.createElement('canvas'); c.width = c.height = 1;
+                  const x = c.getContext('2d', { willReadFrequently: true });
+                  x.clearRect(0,0,1,1); x.fillStyle = v; x.fillRect(0,0,1,1);
+                  const d = x.getImageData(0,0,1,1).data; return [d[0],d[1],d[2]]; }""",
+                var_raw,
+            )
+            ok = (
+                bool(vp_rgb)
+                and bool(ctx2)
+                and "rgba(0, 0, 0, 0)" not in vp
+                and all(abs(c - e) <= 7 for c, e in zip(vp_rgb, ctx2))
+            )
+            if not ok:
+                failures.append(
+                    f"{scene}/letterbox: 抽屉 viewport 应落 §12b 纯规则 --dsh-term-bg（{var_raw} → {ctx2}），got {vp!r} → {vp_rgb}"
+                )
+            else:
+                log(f"  [PASS] {scene}/letterbox  vp={vp_rgb} == var {var_raw} → {ctx2}")
+            # 4) 画布底色 == 蓝黑终端井（与其他终端宿主同源）
+            dom = page.evaluate(
+                """() => { const x = document.querySelector('[data-secondary-panel-shelf] .terminal.xterm');
+                  if (!x) return null; const r = x.getBoundingClientRect();
+                  if (r.width < 40 || r.height < 40) return null;
+                  return {sel: 'shelf-xterm'}; }"""
+            )
+            expected = (8, 11, 18) if theme == "dark" else (9, 13, 20)
+            if dom is None:
+                failures.append(f"{scene}/canvas: 抽屉终端画布不可见")
+            else:
+                # dominant_color 走 .terminal.xterm 全局选择器；抽屉是页面上唯一可见 xterm
+                domc = dominant_color(page, '.terminal.xterm')
+                if domc is None or not all(abs(c - e) <= 7 for c, e in zip(domc, expected)):
+                    failures.append(f"{scene}/canvas: 画布底色 {domc} ≠ 预期 {expected}")
+                else:
+                    log(f"  [PASS] {scene}/canvas  dominant={domc}")
+            # 5) 像素基线：shelf 右缘 24px 竖列（发丝 + 玻璃 tint，确定性区域）
+            rect = page.evaluate(
+                """() => { const s = document.querySelector('[data-secondary-panel-shelf]');
+                  const r = s.getBoundingClientRect();
+                  return {x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height)}; }"""
+            )
+            if rect["w"] >= 60:
+                edge = {"x": rect["x"] + rect["w"] - 24, "y": rect["y"], "w": 24, "h": rect["h"]}
+                shot = Path("/tmp") / f"{scene}__edge.png"
+                capture_region(page, str(shot), edge, max_w=390, max_h=844)
+                compare_region(scene, "edge", shot)
+            else:
+                failures.append(f"{scene}/edge: shelf 宽度过小（{rect['w']}px）")
+            # gallery + audit（终端在抽屉内的全貌）
+            gallery_capture(page, scene, rect)
+            record_audit(scene, theme, {
+                "chromeBg": st.get("shelfBg"),
+                "contentBg": st.get("asideBg"),
+            })
+            # 收尾：关掉抽屉里开的终端（会话挂线程持久，防污染后续场景 tab 行）
+            page.evaluate(
+                """() => { const s = document.querySelector('[data-secondary-panel-shelf]');
+                  if (!s) return;
+                  const close = [...s.querySelectorAll("button")].find(x =>
+                    (x.getAttribute("aria-label") || "").startsWith("Close "));
+                  if (close) close.click(); }"""
+            )
+            page.wait_for_timeout(1500)
+        else:
+            skips.append(f"{scene}: 抽屉内终端未能打开（§12b letterbox 断言未执行）")
+        ctx.close()
+        browser.close()
+
+
 def scene_host_compare() -> None:
     scene = "host_compare"
     if not THREAD:
@@ -1791,6 +2032,11 @@ def main() -> int:
         # 需线程 + 真实 PTY，与 glass_dark_terminal 同级依赖。
         if want("host_compare"):
             scene_host_compare()
+        # §11b 抽屉形态（compact ≤767px）：shelf 玻璃 + 纯 §12b letterbox 宿主。
+        # 需线程 + host daemon（PTY），与 app_terminal 同级依赖。
+        for theme in ("dark", "light"):
+            if want(f"drawer_shelf_{theme}"):
+                scene_drawer_shelf(theme)
     if want("glass_anim"):
         if THREAD:
             scene_glass_anim()
