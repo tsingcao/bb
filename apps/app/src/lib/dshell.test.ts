@@ -105,6 +105,37 @@ describe("lib/dshell opt-in 契约", () => {
     }
   });
 
+  it("启动遇未知字符串（如 maybe）回退 off，与 storage 事件路径一致，不触发暗色 auto 种子（边界）", async () => {
+    // 与 storage 事件未知值测试对偶：启动路径的对称风险是未知值被误判为「无键」，
+    // 在暗色环境下错误触发 auto 种子。断言三件事：
+    // ① 亮色环境下回退 off（与 storage 路径同语义）；
+    // ② 暗色环境下仍回退 off 而非 auto —— 未知值 ≠ 无键，auto 只能由合法
+    //    字符串或真正的无键首见产生；
+    // ③ 存储值不被改写（回退是读时行为，非写时修正，与 opt-in 零副作用一致）。
+    for (const unknown of ["maybe", "banana", "OFF", "truee"]) {
+      const lightMod = await boot(unknown);
+      expect(lightMod.getDshellMode(), `light unknown=${JSON.stringify(unknown)}`).toBe("off");
+      expect(lightMod.isDshellActive()).toBe(false);
+      expect(window.localStorage.getItem(KEY), `light 未改写 ${JSON.stringify(unknown)}`).toBe(unknown);
+
+      const darkMod = await bootEnv({ stored: unknown, darkClass: true });
+      expect(darkMod.getDshellMode(), `dark unknown=${JSON.stringify(unknown)}`).toBe("off");
+      expect(darkMod.getDshellMode()).not.toBe("auto");
+      expect(darkMod.isDshellActive()).toBe(false);
+      expect(document.documentElement.classList.contains("dshell")).toBe(false);
+      expect(window.localStorage.getItem(KEY), `dark 未改写且未种子 ${JSON.stringify(unknown)}`).toBe(unknown);
+    }
+
+    // 对照组：真正的无键 + 暗色才产生 auto 种子（证明上面的 off 非环境偶然）。
+    const seedMod = await bootEnv({ darkClass: true });
+    expect(seedMod.getDshellMode()).toBe("auto");
+    expect(window.localStorage.getItem(KEY)).toBe("auto");
+
+    // 对照组：合法 "auto" 启动即 auto，未被回退路径吞掉。
+    const autoMod = await boot("auto");
+    expect(autoMod.getDshellMode()).toBe("auto");
+  });
+
   it("陈旧布尔值迁移：1/true → on，0/false → off（启动即原版）", async () => {
     const legacyOn = await boot("1");
     expect(legacyOn.getDshellMode()).toBe("on");

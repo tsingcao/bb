@@ -92,7 +92,9 @@
         "apps/app/src/lib/keyboard-settings-messages.ts",
         "apps/app/src/lib/palette-messages.ts",
         "apps/app/src/lib/dshell-panel-perf.ts",
-        "apps/app/src/lib/dshell-panel-perf.test.ts"
+        "apps/app/src/lib/dshell-panel-perf.test.ts",
+        "apps/app/src/lib/dshell.ts",
+        "apps/app/src/lib/dshell.test.ts"
       ],
       "rules": {
         "bb/no-comments": "off"
