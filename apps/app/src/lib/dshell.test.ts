@@ -136,6 +136,41 @@ describe("lib/dshell opt-in 契约", () => {
     expect(autoMod.getDshellMode()).toBe("auto");
   });
 
+  it("档位解析严格大小写敏感：'ON'/'Auto'/'OFF' 是未知值，启动与 storage 路径一致回退 off（决定锁定）", async () => {
+    // 设计决定（锁定为契约，勿改）：解析**不做**大小写归一化。
+    // 理由：① 唯一写入方 setDshellMode 受 DshellMode 类型约束、永远写小写
+    //    字面量，不存在大写来源；手动改 localStorage 属越出契约的操作，
+    //    宽容解析会把笔误（"Auto "尾空格、"ONN"）之外的东西也吞进有效值域，
+    //    反而扩大歧义（如 "On" 该算 on 还是未知？）；② 三态值域与旧布尔
+    //    迁移共用一个回退链，加 toLowerCase 会把 "TRUE"（旧布尔大写）也激活
+    //    为 on，改变已发布的迁移语义；③ 与主题类（html.dark）同风格 ——
+    //    DOM class 同样大小写敏感，宽容解析制造不一致心智模型。
+    // 若未来真要归一化，必须先改此测试 + storage 未知值测试 + 契约文档三处。
+    for (const cased of ["ON", "Auto", "OFF", "On", "AUTO"]) {
+      const lightMod = await boot(cased);
+      expect(lightMod.getDshellMode(), `light cased=${JSON.stringify(cased)}`).toBe("off");
+      expect(lightMod.isDshellActive()).toBe(false);
+
+      const darkMod = await bootEnv({ stored: cased, darkClass: true });
+      expect(darkMod.getDshellMode(), `dark cased=${JSON.stringify(cased)}`).toBe("off");
+      expect(darkMod.getDshellMode()).not.toBe("auto");
+    }
+
+    // storage 路径对称：大写变体同走未知值回退，不触发档位翻转。
+    // （storageEventFromOtherTab 是 storage describe 块内的局部辅助，此处用
+    //  同构的内联 dispatch —— 非本键/同档 no-op 语义已在另一 describe 锁定。）
+    const mod = await boot("on");
+    const modeListener = vi.fn();
+    mod.subscribeDshellMode(modeListener);
+    for (const cased of ["ON", "Auto", "OFF"]) {
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: KEY, newValue: cased }),
+      );
+      expect(mod.getDshellMode(), `storage cased=${JSON.stringify(cased)}`).toBe("off");
+    }
+    expect(modeListener).toHaveBeenCalledTimes(1); // on→off 一次，其余同档 no-op
+  });
+
   it("陈旧布尔值迁移：1/true → on，0/false → off（启动即原版）", async () => {
     const legacyOn = await boot("1");
     expect(legacyOn.getDshellMode()).toBe("on");
