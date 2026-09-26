@@ -9,6 +9,11 @@
 依赖运行中的 dev 栈：BB_URL（app，默认 http://127.0.0.1:18154）代理到后端 server；
 dev 模式下 origin 受信、免登录，Playwright 直接可用真实会话。
 
+录制全链路之外还验证状态机边缘路径：[4b] Escape 取消录制（aria-pressed
+翻回、无 mutation），[4c] 同一组合录到 thread.new —— 两行都持久化且都显示
+"Also used by …" 冲突警示，[4d] Reset thread.new —— 警示回落、railToggle
+override 保持。
+
 用法:
   python3 scripts/keyboard-rebind-e2e.py [--url http://127.0.0.1:18154] [--trace-dir DIR]
 
@@ -202,6 +207,79 @@ def run(
             if new_label is None or new_label == initial_label or default_marker in new_label:
                 fail(f"recorder label did not update to the new chord: {new_label!r}")
             print(f"[4/7] 设置页录制按钮更新为: {new_label!r}")
+
+            # [4b] Escape 取消录制：aria-pressed 翻回 false、标签不变、无 mutation。
+            # 契约：recordingAriaLabel = "Recording shortcut for X. Press keys or
+            # Escape to cancel."；idle 态回到 recordAriaLabel（含 current shortcut）。
+            idle_label_re = re.compile(r"^Record shortcut for (.+), current shortcut (.+)")
+            recording_label_re = re.compile(r"^Recording shortcut for (.+)\.")
+
+            def recorder_state() -> tuple[str, str | None]:
+                btn = recorder_button(page)
+                aria = btn.get_attribute("aria-label") or ""
+                return btn.get_attribute("aria-pressed") or "", aria
+
+            rail_toggle_label = "Toggle icon rail"
+            recorder.click()
+            state, aria = recorder_state()
+            if state != "true" or not recording_label_re.match(aria):
+                fail(f"[4b] recorder did not enter recording state: pressed={state} aria={aria!r}")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(400)
+            state, aria = recorder_state()
+            if state != "false" or not idle_label_re.match(aria):
+                fail(f"[4b] Escape did not cancel recording: pressed={state} aria={aria!r}")
+            if current_shortcut_label(page) != new_label:
+                fail(f"[4b] Escape-cancel mutated the override: label now {current_shortcut_label(page)!r}")
+            overrides_after_escape = server_overrides(page, base_url)
+            if not any(e.get("command") == command for e in overrides_after_escape):
+                fail(f"[4b] Escape-cancel dropped the server override: {overrides_after_escape}")
+            print(f"[4b] Escape 取消录制：aria-pressed=false、标签不变、服务器 override 仍在")
+
+            # [4c] 同一组合录到 thread.new：两行都持久化，两行都显示冲突警示。
+            # thread.new 默认 web 绑定 mod+⇧+O；标签 "New thread"（app-command-metadata）。
+            thread_label = "New thread"
+            thread_default_marker = "O"  # ⇧⌘O / Ctrl+Shift+O 共有字符，足以区分默认/新组合
+            thread_recorder_re = re.compile(rf"^(Record|Recording) shortcut for {re.escape(thread_label)}")
+            thread_recorder = page.get_by_role("button", name=thread_recorder_re).first
+            thread_recorder.wait_for(state="visible", timeout=10000)
+            thread_initial = thread_recorder.get_attribute("aria-label") or ""
+            thread_recorder.click()
+            thread_pressed = thread_recorder.get_attribute("aria-pressed")
+            if thread_pressed != "true":
+                fail(f"[4c] thread.new recorder did not enter recording state: {thread_pressed}")
+            press_chord(page, mod_key, alt=True, shift=False)
+            page.wait_for_timeout(1500)
+            thread_overrides = wait_for_override(page, base_url, "thread.new", present=True)
+            thread_entry = next(e for e in thread_overrides if e.get("command") == "thread.new")
+            print(f"[4c] thread.new 已录同一组合: {thread_entry.get('shortcut')}")
+
+            # 两行冲突警示：conflictMessage = "Also used by <label>. Context ..."
+            conflict_p_re = re.compile(r"^Also used by .+\. Context determines which command runs\.$")
+            settings_body = page.locator("body")
+            conflict_count = settings_body.get_by_text(conflict_p_re).count()
+            if conflict_count < 2:
+                fail(f"[4c] expected >=2 conflict warnings, found {conflict_count}")
+            print(f"[4c] 两行均显示冲突警示（{conflict_count} 处 'Also used by …'）")
+
+            # [4d] Reset thread.new → 其警示消失、railToggle override 保持。
+            thread_reset = page.get_by_role(
+                "button",
+                name=re.compile(rf"^Reset shortcut for {re.escape(thread_label)}$"),
+            ).first
+            thread_reset.click()
+            wait_for_override(page, base_url, "thread.new", present=False)
+            page.wait_for_timeout(600)
+            conflict_count_after = settings_body.get_by_text(conflict_p_re).count()
+            if conflict_count_after != 1:
+                fail(f"[4d] expected exactly 1 conflict warning after reset, found {conflict_count_after}")
+            rail_override_still = server_overrides(page, base_url)
+            if not any(e.get("command") == command for e in rail_override_still):
+                fail(f"[4d] railToggle override lost after resetting thread.new: {rail_override_still}")
+            thread_aria = thread_recorder.get_attribute("aria-label") or ""
+            if thread_default_marker not in thread_aria:
+                fail(f"[4d] thread.new recorder did not return to default (no 'O'): {thread_aria!r}")
+            print("[4d] Reset thread.new：冲突警示回落到 1 处、railToggle override 保持、thread.new 恢复默认")
 
             # --- 验证真实按键生效（回首页按新组合应触发 railToggle）---
             page.goto(f"{base_url}/", wait_until="domcontentloaded")
